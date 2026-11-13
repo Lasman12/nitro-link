@@ -626,6 +626,8 @@ function errText(e) {
   const t = e?.type || e?.message || '';
   if (t === 'peer-unavailable') return 'לא נמצא חדר עם הקוד הזה';
   if (t === 'full') return 'החדר מלא';
+  if (t === 'relay-denied') return 'החיבור הישיר בין המחשבים נחסם, וחיבור הגיבוי עדיין לא הופעל בהגדרות האתר';
+  if (t === 'relay-timeout' || t === 'timeout') return 'לא הצלחנו להתחבר לחדר. בדקו שהמארח עדיין בלובי ונסו שוב';
   if (t === 'nolib') return 'ספריית הרשת לא נטענה – בדקו את החיבור לאינטרנט';
   return 'בעיית חיבור, נסו שוב';
 }
@@ -713,6 +715,8 @@ function renderLobby() {
   $('#btnStart').classList.toggle('hidden', !net.isHost);
   $('#btnStart').disabled = needMore;
   $('#btnStart span').textContent = needMore ? 'מחכים לשחקן נוסף…' : 'התחל משחק';
+  $('#netNote').textContent = net.isHost && !net.offline && net.relayState === 'denied'
+    ? 'חיבור הגיבוי כבוי: חברים ברשתות מסוימות לא יצליחו להצטרף עד שיעודכנו כללי ה‑Firebase (ראו README).' : '';
   $('#chainNote').textContent = net.offline ? 'כדי לשחק בשרשרת צריך ליצור חדר ולהזמין לפחות חבר אחד.' : needMore ? 'שלחו את הקישור לחבר – שרשרת מתחילה כשיש לפחות שני שחקנים בחדר.' : '';
   $('#lobbyWait').classList.toggle('hidden', net.isHost);
   // בחירת שלב: פתוחים כל השלבים שהושלמו ועוד אחד
@@ -830,6 +834,7 @@ $('#btnJoin').onclick = async () => {
     lobbyMode = w.mode || 'race';
     lobbyLevel[lobbyMode] = w.level || 1;
     enterLobby();
+    if (net.viaRelay) toast('מחוברים דרך שרת ממסר – החיבור הישיר נחסם ברשת של אחד מכם', 5000);
     shareLb();
     if (w.game) startGame(w.game.mode, w.game.level || 1, w.game.startAt);
   } catch (e) { $('#menuErr').textContent = errText(e); }

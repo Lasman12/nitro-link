@@ -29,12 +29,15 @@
       ".read": true,
       "race": { "$uid": { ".write": "auth != null && auth.uid == $uid" } },
       "chain": { "$key": { ".write": "auth != null && $key.contains(auth.uid)" } }
-    }
+    },
+    "rooms": { "$code": { ".read": true, ".write": "$code.length == 4" } }
   }
 }
 ```
 
 4. **Project settings → General → Your apps → Web app** – מעתיקים את `apiKey` ואת `databaseURL` לקובץ `js/config.js`.
+
+החלק `rooms` משמש כ**חיבור גיבוי**: כשהחיבור הישיר בין שני מחשבים נחסם (נתבים מסוימים, רשת סלולרית), המשחק מעביר את הנתונים דרך Firebase במקום. בלי החלק הזה חברים ברשתות כאלה לא יצליחו להצטרף.
 
 (המשחק שומר ב‑Firebase כתובת מייל פיקטיבית שנגזרת משם המשתמש; הסיסמה מנוהלת על ידי Firebase ולא נשמרת במשחק.)
 

@@ -304,7 +304,7 @@ class Game {
 
   applyChain() {
     const car = this.car, b = car.body;
-    let maxT = 0;
+    let maxT = 0, lift = 0;
     b.quaternion.vmult(ATT, cr);
     for (const nid of this.neighbors) {
       const r = this.remotes.get(nid);
@@ -313,6 +313,10 @@ class Game {
       const dist = Math.hypot(dx, dy, dz);
       if (dist > CHAIN_LEN * 2.5 || dist < 1e-3) continue;
       const stretch = dist - CHAIN_LEN;
+      // אני תלוי באוויר והשותף עומד על המסלול: השרשרת מרימה אותי עד שאני כמעט בגובה שלו.
+      // כך המשקל שלי לא מקבע אותו במקום – הוא יכול לנסוע ולמשוך אותי חזרה מעל השפה.
+      const hanging = !car.supported && r.supported;
+      if (hanging) lift = Math.max(lift, clamp(stretch * 1.5 + 1, 0, 2.5) * clamp((dy + 0.4) / 0.8, 0, 1));
       if (stretch <= 0) continue;
       const ux = dx / dist, uy = dy / dist, uz = dz / dist;
       b.angularVelocity.cross(cr, cv); cv.vadd(b.velocity, cv);
@@ -325,9 +329,20 @@ class Game {
       }
       // לפחות אחת עומדת על משהו: השרשרת מחזיקה. הכוח נחלש כשמתקרבים, כך שאין אפקט "גומי" שמקפיץ חזרה.
       const soft = clamp(1 + rate / 2, 0, 1);
-      const F = clamp(CHAIN_K * stretch * soft + CHAIN_C * Math.max(rate, 0), 0, CP.mass * 110);
-      addForce(b, cf.set(ux * F, uy * F, uz * F), cr);
-      if (stretch > 2.2 && rate > 0) { b.velocity.x += ux * rate * 0.5; b.velocity.y += uy * rate * 0.5; b.velocity.z += uz * rate * 0.5; }
+      // כשאני עומד והשותף תלוי, אני מרגיש רק חלק קטן מהמשיכה (הוא מורם בכוח השרשרת), כדי שאוכל לנסוע
+      const holding = car.supported && !r.supported;
+      let F = clamp(CHAIN_K * stretch * soft + CHAIN_C * Math.max(rate, 0), 0, CP.mass * 110);
+      if (holding) F = Math.min(F * 0.35, CP.mass * 7);
+      // כשאני תלוי עמוק מתחת לשותף, המשיכה היא כמעט רק כלפי מעלה – עולים לצד הקיר במקום להידחס אליו
+      // או להיסחף מתחת לפלטפורמה. המשיכה פנימה חוזרת רק ליד השפה, כדי לעבור מעליה.
+      const side = hanging && dy > 2.5 ? 0.15 : 1;
+      addForce(b, cf.set(ux * F * side, uy * F, uz * F * side), cr);
+      if (stretch > (holding ? 6 : 2.2) && rate > 0) { b.velocity.x += ux * rate * 0.5; b.velocity.y += uy * rate * 0.5; b.velocity.z += uz * rate * 0.5; }
+    }
+    if (lift > 0) {
+      const m = CP.mass, k = Math.min(1, lift);
+      b.force.y += m * CP.gravity * lift - m * 2.2 * b.velocity.y * k;
+      b.force.x -= m * 1.2 * b.velocity.x * k; b.force.z -= m * 1.2 * b.velocity.z * k;
     }
     this.tension = maxT;
   }
@@ -688,14 +703,23 @@ function renderLobby() {
   $('#roomCode').textContent = net.offline ? 'אימון' : net.code;
   $('#btnCopy').classList.toggle('hidden', net.offline);
   $('#players').innerHTML = net.players.map((p) => `<li><i style="background:${esc(p.skin?.color || '#fff')}"></i>${esc(p.name)}<em>${p.id === 0 ? 'מארח' : ''}${p.id === net.myId ? ' (אני)' : ''}</em></li>`).join('');
-  document.querySelectorAll('.mode').forEach((b) => { b.classList.toggle('on', b.dataset.mode === lobbyMode); b.disabled = !net.isHost; });
+  if (net.offline && lobbyMode === 'chain') lobbyMode = 'race'; // שרשרת רק בחדר אמיתי
+  document.querySelectorAll('.mode').forEach((b) => {
+    b.classList.toggle('on', b.dataset.mode === lobbyMode);
+    b.disabled = !net.isHost || (b.dataset.mode === 'chain' && net.offline);
+    b.classList.toggle('off', b.dataset.mode === 'chain' && net.offline);
+  });
+  const needMore = lobbyMode === 'chain' && net.players.length < 2;
   $('#btnStart').classList.toggle('hidden', !net.isHost);
+  $('#btnStart').disabled = needMore;
+  $('#btnStart span').textContent = needMore ? 'מחכים לשחקן נוסף…' : 'התחל משחק';
+  $('#chainNote').textContent = net.offline ? 'כדי לשחק בשרשרת צריך ליצור חדר ולהזמין לפחות חבר אחד.' : needMore ? 'שלחו את הקישור לחבר – שרשרת מתחילה כשיש לפחות שני שחקנים בחדר.' : '';
   $('#lobbyWait').classList.toggle('hidden', net.isHost);
   // בחירת שלב: פתוחים כל השלבים שהושלמו ועוד אחד
   const mode = lobbyMode, open = unlocked(mode), best = mode === 'chain' ? account.profile.bestChain : account.profile.bestRace;
   if (net.isHost) lobbyLevel[mode] = clamp(lobbyLevel[mode], 1, open);
   const sel = lobbyLevel[mode];
-  $('#levelsTitle').textContent = `שלב ${sel} מתוך ${maxLevel(mode)}` + (mode === 'chain' && net.players.length < 2 ? ' · לבד זה רק אימון – שלב נחשב כשמשחקים בשניים' : '');
+  $('#levelsTitle').textContent = `שלב ${sel} מתוך ${maxLevel(mode)}`;
   let html = '';
   for (let i = 1; i <= maxLevel(mode); i++) {
     const lock = i > open;
@@ -717,11 +741,15 @@ function startGame(mode, level, startAt) {
   if (game) game.dispose();
   currentGame = { mode, level, startAt };
   game = new Game(mode, level, startAt);
+  $('#results').classList.add('hidden');
+  $('#pause').classList.add('hidden');
+  input.enabled = true;
   show('game');
 }
 
 function hostStart(mode, level) {
   if (!net.isHost) return;
+  if (mode === 'chain' && (net.offline || net.players.length < 2)) { toast('שרשרת דורשת חדר עם שני שחקנים לפחות'); toLobby(); return; }
   level = clamp(level, 1, maxLevel(mode));
   lobbyMode = mode; lobbyLevel[mode] = level;
   const startAt = net.now() + 4200;

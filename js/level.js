@@ -41,6 +41,9 @@ class Builder {
     this.group = new THREE.Group();
     this.cps = []; this.pads = []; this.dyn = []; this.buttons = []; this.finish = null; this.minY = 0;
     this.path = []; // נקודות לאורך המסלול – כדי שקישוטים לא יונחו עליו
+    // בשרשרת הרצפות הן "מגדלים" עמוקים: מכונית שתלויה על השרשרת נשענת על הקיר ועולה לאורכו,
+    // במקום להיסחף אל מתחת לפלטפורמה ולהיתקע שם
+    this.thick = theme.startsWith('chain') ? 24 : 1.2;
     const std = (o) => new THREE.MeshStandardMaterial({ metalness: 0.15, roughness: 0.72, envMapIntensity: 0.6, ...o });
     this.mats = {
       floor: std({ map: tex.grid, color: T.floor }),
@@ -78,12 +81,13 @@ class Builder {
   solid(c, size, q, key, collide = true) {
     this.addGeo(key, boxGeo(size[0], size[1], size[2]), c, q);
     if (collide) this.body(c, size, q);
-    this.minY = Math.min(this.minY, c.y - size[1]);
+    this.minY = Math.min(this.minY, c.y + size[1] / 2 - Math.min(size[1] * 1.5, 12));
   }
 
   // קטע משטח: len קדימה, rise עלייה
   seg(len, o = {}) {
-    const { w = 14, rise = 0, off = 0, thick = 1.2, stay = false } = o;
+    const { w = 14, rise = 0, off = 0, stay = false } = o;
+    const thick = o.thick || (rise ? 1.2 : this.thick);
     const f = this.F(), l = this.Lf();
     const slope = Math.hypot(len, rise), q = this.quat(-Math.atan2(rise, len));
     const n = UP.clone().applyQuaternion(q);

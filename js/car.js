@@ -120,7 +120,7 @@ export class CarPhysics {
               const a = Math.abs(vfw);
               Fd = th * P.engine * (a < lim * 0.75 ? 1 : Math.max(0, (lim - a) / (lim * 0.25)));
             } else Fd = th * P.brake;
-          } else Fd = -vfw * (Math.abs(vfw) < 2 ? 5 : 0.5);
+          } else Fd = Math.abs(vfw) < 3 ? clamp(-vfw * 20, -25, 25) : -vfw * 0.5; // בלי גז ובמהירות נמוכה – בלם חניה, כדי שלא ייגרר
           if (locked) Fd = -vfw * 8;
           if (!this.boosting && Math.abs(vfw) > P.maxSpeed + 1) Fd -= Math.sign(vfw) * 5;
           Fd *= P.mass / 4;

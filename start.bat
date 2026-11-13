@@ -10,11 +10,11 @@ echo.
 start "" "http://localhost:%PORT%"
 where python >nul 2>nul
 if %errorlevel%==0 (
-  python -m http.server %PORT% --bind 127.0.0.1
+  python serve.py %PORT%
 ) else (
   where py >nul 2>nul
   if %errorlevel%==0 (
-    py -m http.server %PORT% --bind 127.0.0.1
+    py serve.py %PORT%
   ) else (
     echo   Python was not found. Install it from https://www.python.org/downloads/
     echo   or upload the folder to GitHub Pages and play from there.

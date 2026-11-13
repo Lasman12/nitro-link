@@ -227,3 +227,7 @@ body.touch #board { display: none; }
 #resInfo .pb { color: #2bffb0; font-weight: 800; }
 #resInfo .xp { color: #19d3ff; font-weight: 800; }
 #resInfo small { opacity: .7; }
+
+.mode.off { opacity: .4; }
+.note { margin: 0; font-size: 13px; color: #ffd27a; min-height: 0; }
+.note:empty { display: none; }

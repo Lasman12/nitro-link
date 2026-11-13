@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>NITRO LINK – מירוץ מכשולים אונליין</title>
+<meta name="description" content="משחק מירוצים תלת־ממדי אונליין: מסלול מכשולים עם רמפות ומצב שרשרת שיתופי.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;600;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
+    "cannon-es": "https://cdn.jsdelivr.net/npm/cannon-es@0.20.0/dist/cannon-es.js"
+  }
+}
+</script>
+<script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="loading"><div class="logo">NITRO<span>LINK</span></div><p id="loadMsg">טוען…</p></div>
+<script>
+// הודעה ברורה במקום מסך טעינה תקוע
+(function () {
+  var msg = document.getElementById('loadMsg');
+  function fail(html) { if (!window.__nlReady) { msg.innerHTML = html; msg.style.cssText = 'max-width:520px;text-align:center;line-height:1.7;padding:0 16px'; } }
+  if (location.protocol === 'file:') {
+    fail('אי אפשר להפעיל את המשחק בלחיצה כפולה על <b dir="ltr">index.html</b>.<br>לחצו לחיצה כפולה על <b dir="ltr">start.bat</b> שבאותה תיקייה,<br>או שחקו דרך הכתובת של GitHub Pages.');
+    return;
+  }
+  var net = 'הטעינה נכשלה. המשחק צריך חיבור לאינטרנט כדי לטעון את ספריות התלת־ממד.<br>בדקו את החיבור ורעננו את הדף.';
+  window.addEventListener('error', function (e) { if (e.target && e.target.tagName === 'SCRIPT') fail(net); }, true);
+  setTimeout(function () { fail(net); }, 20000);
+})();
+</script>
+
+<!-- תפריט ראשי -->
+<section id="menu" class="screen hidden">
+  <div class="panel">
+    <h1 class="logo">NITRO<span>LINK</span></h1>
+    <p class="tag">מירוץ מכשולים אונליין עם חברים</p>
+    <div id="acct"></div>
+    <label for="name">השם שלך</label>
+    <input id="name" maxlength="14" placeholder="שחקן" autocomplete="off">
+    <button id="btnCreate" class="btn primary"><span>צור חדר</span></button>
+    <div class="row">
+      <input id="code" maxlength="5" placeholder="קוד חדר" autocomplete="off" dir="ltr">
+      <button id="btnJoin" class="btn orange"><span>הצטרף</span></button>
+    </div>
+    <div class="row">
+      <button id="btnSolo" class="btn ghost"><span>אימון לבד</span></button>
+      <button id="btnGarage" class="btn ghost"><span>מוסך</span></button>
+    </div>
+    <button id="btnLb" class="btn ghost"><span>טבלת שיאים</span></button>
+    <p id="menuErr" class="err"></p>
+  </div>
+</section>
+
+<!-- התחברות / הרשמה -->
+<section id="auth" class="screen hidden">
+  <div class="panel">
+    <h2>חשבון שחקן</h2>
+    <p class="tag" id="authNote">שם המשתמש יופיע בטבלת השיאים. ההתקדמות, השיאים וה‑XP נשמרים בחשבון.</p>
+    <label for="authName">שם משתמש</label>
+    <input id="authName" maxlength="14" autocomplete="username">
+    <label for="authPass">סיסמה (6 תווים לפחות)</label>
+    <input id="authPass" type="password" maxlength="40" autocomplete="current-password">
+    <div class="row">
+      <button id="btnLogin" class="btn primary"><span>התחברות</span></button>
+      <button id="btnRegister" class="btn orange"><span>הרשמה</span></button>
+    </div>
+    <p id="authErr" class="err"></p>
+    <button id="btnAuthBack" class="btn ghost"><span>חזרה</span></button>
+  </div>
+</section>
+
+<!-- טבלת שיאים -->
+<section id="lb" class="screen hidden">
+  <div class="panel wide">
+    <h2>טבלת שיאים</h2>
+    <div class="tabs">
+      <button class="tab on" data-tab="race">מסלול יחיד</button>
+      <button class="tab" data-tab="chain">מסלול לשניים (שרשרת)</button>
+    </div>
+    <ol id="lbList"></ol>
+    <p id="lbNote" class="tag"></p>
+    <button id="btnLbBack" class="btn ghost"><span>חזרה</span></button>
+  </div>
+</section>
+
+<!-- מוסך -->
+<section id="garage" class="screen hidden">
+  <div class="panel wide">
+    <h2>המוסך</h2>
+    <div id="garageOpts"></div>
+    <button id="btnGarageDone" class="btn primary"><span>סיימתי</span></button>
+  </div>
+</section>
+
+<!-- לובי -->
+<section id="lobby" class="screen hidden">
+  <div class="panel wide">
+    <div id="roomBox">
+      <div><small>קוד החדר</small><div id="roomCode" dir="ltr">----</div></div>
+      <button id="btnCopy" class="btn ghost small"><span>העתק קישור</span></button>
+    </div>
+    <h3>שחקנים</h3>
+    <ul id="players"></ul>
+    <h3>מצב משחק</h3>
+    <div id="modes">
+      <button class="mode" data-mode="race">
+        <b>מסלול מכשולים</b>
+        <small>מירוץ עם רמפות, קפיצות ומכשולים זזים. הראשון לקו הסיום מנצח.</small>
+      </button>
+      <button class="mode" data-mode="chain">
+        <b>מחוברים בשרשרת</b>
+        <small>כל המכוניות קשורות בשרשרת. טפסו יחד לפסגה ופתרו חידות.</small>
+      </button>
+    </div>
+    <h3 id="levelsTitle">שלב</h3>
+    <div id="levels"></div>
+    <button id="btnStart" class="btn primary"><span>התחל משחק</span></button>
+    <p id="lobbyWait" class="tag hidden">ממתין שהמארח יתחיל…</p>
+    <div class="row">
+      <button id="btnLobbyGarage" class="btn ghost"><span>מוסך</span></button>
+      <button id="btnLeave" class="btn ghost"><span>יציאה</span></button>
+    </div>
+  </div>
+</section>
+
+<!-- HUD -->
+<div id="hud" class="hidden">
+  <div id="timer" dir="ltr">0:00.00</div>
+  <div id="lvlTag"></div>
+  <div id="rank" dir="ltr"></div>
+  <ol id="board"></ol>
+  <div id="speedo"><div id="ring"><div id="spd">0</div><small>קמ"ש</small></div></div>
+  <div id="chainHud" class="hidden">
+    <div id="height">גובה 0 מ'</div>
+    <div class="bar"><i id="tension"></i></div>
+    <small>מתח השרשרת</small>
+  </div>
+  <div id="msg"></div>
+  <div id="hint">WASD / חצים – נהיגה והיגוי באוויר · רווח – קפיצה (החזקה = גבוה יותר, פעמיים באוויר) · Shift – בוסט · X – דריפט · Q/E – גלגול · I/K – הטיה · R – חזרה לנקודת ביקורת · Esc – תפריט</div>
+</div>
+<div id="countdown" class="hidden"></div>
+
+<!-- תוצאות -->
+<div id="results" class="overlay hidden">
+  <div class="panel">
+    <h2 id="resTitle">תוצאות</h2>
+    <ol id="resList"></ol>
+    <div id="resInfo"></div>
+    <button id="btnNext" class="btn primary"><span>לשלב הבא</span></button>
+    <button id="btnRetry" class="btn ghost"><span>שוב את השלב הזה</span></button>
+    <button id="btnResLobby" class="btn ghost"><span>חזרה ללובי</span></button>
+    <button id="btnResClose" class="btn ghost"><span>המשך לנהוג</span></button>
+  </div>
+</div>
+
+<!-- תפריט עצירה -->
+<div id="pause" class="overlay hidden">
+  <div class="panel">
+    <h2>תפריט</h2>
+    <button id="btnResume" class="btn primary"><span>המשך</span></button>
+    <button id="btnRespawn" class="btn ghost"><span>חזרה לנקודת ביקורת</span></button>
+    <button id="btnQuality" class="btn ghost"><span>גרפיקה: גבוהה</span></button>
+    <button id="btnSound" class="btn ghost"><span>סאונד: פועל</span></button>
+    <button id="btnToLobby" class="btn ghost"><span>חזרה ללובי</span></button>
+    <button id="btnQuit" class="btn ghost"><span>יציאה מהחדר</span></button>
+  </div>
+</div>
+
+<!-- שליטת מגע -->
+<div id="touch" class="hidden">
+  <div id="stick"><i></i></div>
+  <button id="tMenu">☰</button>
+  <div id="tBtns">
+    <button data-k="boost" class="tb boost">בוסט</button>
+    <button data-k="jump" class="tb jump">קפיצה</button>
+    <button data-k="brake" class="tb brake">ברקס</button>
+    <button data-k="gas" class="tb gas">גז</button>
+  </div>
+</div>
+
+<div id="toast"></div>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>

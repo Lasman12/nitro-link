@@ -53,6 +53,7 @@ class Relay {
 
   // מצב שחקן: נשלח רק האחרון. אם הבקשה הקודמת עוד בדרך, מחכים לה (כך הקצב מתאים את עצמו לרשת)
   state(id, obj) {
+    if (this.dead) return;
     if (this.busy[id]) { this.pending[id] = obj; return; }
     this.busy[id] = true;
     this.req('PUT', '/s/' + id, obj).catch(() => {}).finally(() => {
@@ -76,7 +77,12 @@ export class Net {
   clear() {
     clearInterval(this.timer);
     if (this.peer) { try { this.peer.destroy(); } catch { /* ignore */ } }
-    if (this.relay) { if (this.isHost) this.relay.req('DELETE', '').catch(() => {}); this.relay.close(); }
+    if (this.relay) {
+      this.relay.dead = true;
+      if (this.isHost) this.relay.req('DELETE', '').catch(() => {});
+      else if (this.myId) this.relay.req('DELETE', '/s/' + this.myId).catch(() => {});
+      this.relay.close();
+    }
     this.peer = null; this.conns = new Map(); this.hostConn = null;
     this.relay = null; this.rconns = new Map(); this.relayKey = ''; this.viaRelay = false; this.relayState = 'off';
     this.onWelcome = null; this.onFull = null;
@@ -224,7 +230,13 @@ export class Net {
   }
 
   relayClientEvent(path, data, key) {
-    if (path === '/' && data == null) { if (this.myId) this.emit('closed'); return; }
+    if (path === '/' && data == null) {
+      // המארח סגר את החדר. מפסיקים לשלוח, ומנקים עדכון שאולי עוד היה בדרך ונכתב אחרי המחיקה
+      const r = this.relay, id = this.myId;
+      if (r) { r.dead = true; if (id) setTimeout(() => r.req('DELETE', '/s/' + id).catch(() => {}), 1500); }
+      if (id) this.emit('closed');
+      return;
+    }
     if (data == null) return;
     if (path.startsWith('/m/')) {
       if (data.to !== key || !data.m) return;

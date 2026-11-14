@@ -378,9 +378,9 @@ class Game {
       if (game !== this) return;
       const st = this.standings(), place = st.findIndex((x) => x.me) + 1, n = st.length;
       if (n >= 2) {
-        const dnf = this.mode === 'vs' && !this.fin;
-        const tr = (dnf ? 0 : [10, 6, 3][place - 1] ?? 1) + (this.battle ? this.kos : 0);
-        this.credit = account.gain({ tr, coins: dnf ? 5 : [40, 25, 15][place - 1] ?? 8, xp: 30 + (n - place) * 15 });
+        // תגמול קטן בכוונה, ורק למנצח – כדי שלא ישתלם לחברים להפסיד בכוונה אחד לשני
+        const win = place === 1 && !(this.mode === 'vs' && !this.fin);
+        this.credit = account.gain({ tr: win ? 1 : 0, coins: win ? 4 : 0, xp: 30 + (n - place) * 15 });
         this.credit.place = place;
       }
       showResults();

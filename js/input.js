@@ -7,6 +7,7 @@ export class Input {
     this.enabled = true;
     this.state = { throttle: 0, steer: 0, jump: false, jumpHeld: false, boost: false, drift: false, pitch: 0, roll: 0, respawn: false };
     this.padPrev = {};
+    this.padBase = {};
     this.menu = false;
 
     const typing = (e) => e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA');
@@ -67,6 +68,7 @@ export class Input {
     s.roll = (k.has('KeyE') ? 1 : 0) - (k.has('KeyQ') ? 1 : 0);
     s.jump = this.pressed.has('Space') || this.pressed.has('TouchJump');
     s.respawn = this.pressed.has('KeyR');
+    this.next = this.pressed.has('Space') || this.pressed.has('TouchJump') || this.pressed.has('ArrowRight') || this.pressed.has('KeyD');
     s.jumpHeld = k.has('Space') || t.jump;
 
     if (t.gas) s.throttle = 1;
@@ -76,32 +78,54 @@ export class Input {
 
     // שלט: מקל שמאלי / חיצים – היגוי · RT – גז · LT – ברקס/רוורס · A – קפיצה · B או RB – ניטרו
     //       X – דריפט · Y – חזרה לנקודת ביקורת · Start – תפריט
-    const gp = this.pad();
     this.menu = false;
-    if (gp) {
+    const edge = (name, on) => { const hit = on && !this.padPrev[name]; this.padPrev[name] = on; return hit; };
+    // ממזגים את כל השלטים המחוברים (למשל שני Joy-Con נפרדים של נינטנדו)
+    let px = 0, rt = 0, lt = 0, jump = false, resp = false, menu = false, any = false;
+    for (const gp of this.pads()) {
+      any = true;
+      const std = gp.mapping === 'standard';
       const b = (i) => !!gp.buttons[i]?.pressed, v = (i) => gp.buttons[i]?.value || 0;
-      const ax = gp.axes[0] || 0;
-      if (Math.abs(ax) > 0.18) s.steer = -Math.sign(ax) * Math.min(1, (Math.abs(ax) - 0.18) / 0.7);
-      if (b(14)) s.steer = 1; else if (b(15)) s.steer = -1;
-      const rt = v(7), lt = v(6);
-      if (rt > 0.08 || lt > 0.08) s.throttle = rt - lt;
+      const base = (this.padBase[gp.index] ||= Array.from(gp.axes));
+      // מקל: ציר 0 תמיד; בשלטים לא סטנדרטיים (חלק משלטי נינטנדו) בודקים גם צירים אחרים שנחים באמצע
+      const cand = std ? [0, 2] : [0, 2, 4];
+      for (const i of cand) {
+        if (i >= gp.axes.length || Math.abs(base[i] || 0) > 0.5) continue;
+        const a = gp.axes[i] || 0;
+        if (Math.abs(a) > Math.abs(px) && Math.abs(a) > 0.18) px = a;
+      }
+      // חיצים: ככפתורים (סטנדרטי) או כ"כובע" על ציר אחד (נינטנדו / שלטים ישנים)
+      if (b(14)) px = -1; else if (b(15)) px = 1;
+      if (!std) {
+        for (const i of [9, gp.axes.length - 1]) {
+          const h = gp.axes[i];
+          if (h === undefined || i < 4) continue;
+          const k = Math.round((h + 1) * 3.5);
+          if (Math.abs(h - (k / 3.5 - 1)) < 0.06 && k >= 0 && k <= 7 && Math.abs(h) > 0.1) { if (k >= 1 && k <= 3) px = 1; else if (k >= 5) px = -1; }
+        }
+      }
+      rt = Math.max(rt, v(7)); lt = Math.max(lt, v(6));
       if (b(1) || b(5)) s.boost = true;
       if (b(2)) s.drift = true;
-      const edge = (name, on) => { const hit = on && !this.padPrev[name]; this.padPrev[name] = on; return hit; };
-      if (b(0)) s.jumpHeld = true;
-      if (edge('jump', b(0))) s.jump = true;
-      if (edge('respawn', b(3))) s.respawn = true;
-      if (edge('menu', b(9))) this.menu = true;
+      jump ||= b(0); resp ||= b(3); menu ||= b(9);
+    }
+    if (any) {
+      if (Math.abs(px) > 0.18) s.steer = -Math.sign(px) * Math.min(1, (Math.abs(px) - 0.18) / 0.7);
+      if (rt > 0.08 || lt > 0.08) s.throttle = rt - lt;
+      if (jump) s.jumpHeld = true;
+      if (edge('jump', jump)) { s.jump = true; this.next = true; }
+      if (edge('respawn', resp)) s.respawn = true;
+      if (edge('menu', menu)) this.menu = true;
     }
     if (!this.enabled) { s.throttle = 0; s.steer = 0; s.jump = false; s.jumpHeld = false; s.boost = false; s.drift = false; s.pitch = 0; s.roll = 0; s.respawn = false; }
     return s;
   }
 
-  // השלט הראשון שמחובר (לא תמיד במקום 0)
-  pad() {
-    if (!navigator.getGamepads) return null;
-    for (const g of navigator.getGamepads()) if (g && g.connected && g.buttons.length >= 10) return g;
-    return null;
+  pads() {
+    const out = [];
+    if (!navigator.getGamepads) return out;
+    for (const g of navigator.getGamepads()) if (g && g.connected && g.buttons.length >= 2) out.push(g);
+    return out;
   }
 
   endFrame() { this.pressed.clear(); }

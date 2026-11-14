@@ -10,10 +10,10 @@ const ls = {
   set(k, v) { try { localStorage.setItem('nl_' + k, JSON.stringify(v)); } catch { /* ignore */ } },
   del(k) { try { localStorage.removeItem('nl_' + k); } catch { /* ignore */ } },
 };
-const emptyProfile = (name = '') => ({ name, xp: 0, race: 0, chain: 0, bestRace: {}, bestChain: {} });
+const emptyProfile = (name = '') => ({ name, xp: 0, race: 0, chain: 0, bestRace: {}, bestChain: {}, tr: 0, coins: 0, road: 0, own: {} });
 // Firebase מחזיר מפתחות מספריים כמערך (עם null בחורים) – מנרמלים חזרה לאובייקט {שלב: זמן}
 const times = (o) => Object.fromEntries(Object.entries(o || {}).filter(([, v]) => v > 0));
-const fix = (p, name) => ({ ...emptyProfile(name), ...(p || {}), bestRace: times(p?.bestRace), bestChain: times(p?.bestChain) });
+const fix = (p, name) => ({ ...emptyProfile(name), ...(p || {}), bestRace: times(p?.bestRace), bestChain: times(p?.bestChain), own: { ...(p?.own || {}) } });
 const keyOf = (name) => name.trim().toLowerCase();
 const hex = (buf) => [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
 const sha = async (text) => hex(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text)));
@@ -163,8 +163,11 @@ export class Account {
     if (kind === 'chain') xp = Math.round(xp * 1.2);
     if (newPb) best[level] = ms;
     p[kind] = Math.max(p[kind] || 0, level);
-    p.xp = (p.xp || 0) + xp;
-    return { first, newPb, prev, xp, saved: this.loggedIn };
+    // גביעים ומטבעות: שלב חדש שווה הרבה, שיא אישי קצת, ומשחק חוזר מעט
+    const tr = first ? (kind === 'chain' ? 6 : 5) : newPb ? 1 : 0;
+    const coins = first ? 30 + level * 2 : newPb ? 12 : 5;
+    p.xp = (p.xp || 0) + xp; p.tr = (p.tr || 0) + tr; p.coins = (p.coins || 0) + coins;
+    return { first, newPb, prev, xp, tr, coins, saved: this.loggedIn };
   }
 
   finishRace(level, ms) {
@@ -182,6 +185,36 @@ export class Account {
     return res;
   }
 
+  // תגמול ממצבי החברים (מירוץ / קרב)
+  gain(g) {
+    const p = this.profile;
+    p.xp = (p.xp || 0) + (g.xp || 0); p.tr = Math.max(0, (p.tr || 0) + (g.tr || 0)); p.coins = (p.coins || 0) + (g.coins || 0);
+    if (this.loggedIn) this.persist().then(() => this.pushRace()).catch(() => {});
+    this.onChange();
+    return { ...g, saved: this.loggedIn };
+  }
+  owns(id) { return !!this.profile.own[id]; }
+  buy(id, price) {
+    const p = this.profile;
+    if (p.own[id] || (p.coins || 0) < price) return false;
+    p.coins -= price; p.own[id] = 1;
+    if (this.loggedIn) this.persist().catch(() => {});
+    this.onChange();
+    return true;
+  }
+  // דרך הגביעים: i = מספר התחנה, r = {at, coins | item}
+  claimed(i) { return !!((this.profile.road || 0) & (1 << i)); }
+  claim(i, r) {
+    const p = this.profile;
+    if (this.claimed(i) || (p.tr || 0) < r.at) return false;
+    p.road = (p.road || 0) | (1 << i);
+    if (r.coins) p.coins = (p.coins || 0) + r.coins;
+    if (r.item) p.own[r.item] = 1;
+    if (this.loggedIn) this.persist().catch(() => {});
+    this.onChange();
+    return true;
+  }
+
   async persist() {
     if (!this.user) return;
     if (ONLINE) await this.db('PUT', `users/${this.user.uid}`, this.profile);
@@ -192,10 +225,10 @@ export class Account {
     }
   }
 
-  raceEntry() { return { name: this.user.name, level: this.profile.race, xp: this.profile.xp }; }
+  raceEntry() { return { name: this.user.name, level: this.profile.race, xp: this.profile.xp, tr: this.profile.tr || 0 }; }
 
   async pushRace() {
-    if (!this.user || !this.profile.race) return;
+    if (!this.user || !(this.profile.race || this.profile.tr)) return;
     const k = safeKey(this.user.uid);
     if (ONLINE) await this.db('PUT', `lb/race/${k}`, this.raceEntry());
     else this.mergeLb({ race: { [k]: this.raceEntry() }, chain: {} });
@@ -219,8 +252,8 @@ export class Account {
     const lb = this.exportLb();
     const str = (v) => String(v || '').slice(0, 40), num = (v) => Math.max(0, Math.round(Number(v) || 0));
     for (const [k, e] of Object.entries(data.race || {}).slice(0, 300)) {
-      const cur = lb.race[k], n = { name: str(e.name), level: num(e.level), xp: num(e.xp) };
-      if (!n.name || !n.level) continue;
+      const cur = lb.race[k], n = { name: str(e.name), level: num(e.level), xp: num(e.xp), tr: num(e.tr) };
+      if (!n.name) continue;
       if (!cur || n.level > cur.level || (n.level === cur.level && n.xp > cur.xp)) lb.race[safeKey(k)] = n;
     }
     for (const [k, e] of Object.entries(data.chain || {}).slice(0, 300)) {

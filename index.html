@@ -56,6 +56,10 @@
       <button id="btnSolo" class="btn ghost"><span>אימון לבד</span></button>
       <button id="btnGarage" class="btn ghost"><span>מוסך</span></button>
     </div>
+    <div class="row">
+      <button id="btnRoad" class="btn ghost"><span>🏆 דרך הגביעים</span></button>
+      <button id="btnShop" class="btn ghost"><span>🪙 חנות</span></button>
+    </div>
     <button id="btnLb" class="btn ghost"><span>טבלת שיאים</span></button>
     <p id="menuErr" class="err"></p>
   </div>
@@ -93,6 +97,28 @@
   </div>
 </section>
 
+<!-- דרך הגביעים -->
+<section id="road" class="screen hidden">
+  <div class="panel wide">
+    <h2>דרך הגביעים</h2>
+    <div id="roadTop"></div>
+    <ol id="roadList" class="items"></ol>
+    <p id="roadNote" class="tag"></p>
+    <button id="btnRoadBack" class="btn ghost"><span>חזרה</span></button>
+  </div>
+</section>
+
+<!-- חנות -->
+<section id="shop" class="screen hidden">
+  <div class="panel wide">
+    <h2>החנות</h2>
+    <div id="shopTop"></div>
+    <ol id="shopList" class="items"></ol>
+    <p id="shopNote" class="tag"></p>
+    <button id="btnShopBack" class="btn ghost"><span>חזרה</span></button>
+  </div>
+</section>
+
 <!-- מוסך -->
 <section id="garage" class="screen hidden">
   <div class="panel wide">
@@ -115,11 +141,19 @@
     <div id="modes">
       <button class="mode" data-mode="race">
         <b>מסלול מכשולים</b>
-        <small>מירוץ עם רמפות, קפיצות ומכשולים זזים. הראשון לקו הסיום מנצח.</small>
+        <small>30 שלבים מקל לקשה. שיאים אישיים ו‑XP.</small>
+      </button>
+      <button class="mode" data-mode="vs">
+        <b>מירוץ חברים</b>
+        <small>30 מפות פתוחות, קצרות עד ארוכות. פודיום לשלושת הראשונים.</small>
+      </button>
+      <button class="mode" data-mode="battle">
+        <b>קרב מכוניות</b>
+        <small>העיפו את החברים מהזירה. 3 חיים לכל אחד.</small>
       </button>
       <button class="mode" data-mode="chain">
         <b>מחוברים בשרשרת</b>
-        <small>כל המכוניות קשורות בשרשרת. טפסו יחד לפסגה ופתרו חידות.</small>
+        <small>כולם קשורים בשרשרת. טפסו יחד ופתרו חידות.</small>
       </button>
     </div>
     <p id="netNote" class="note"></p>
@@ -147,8 +181,11 @@
     <div class="bar"><i id="tension"></i></div>
     <small>מתח השרשרת</small>
   </div>
+  <div id="info"></div>
+  <div id="nitro"><b>NITRO</b><div class="nbar"><i id="nitroFill"></i></div></div>
+  <div id="battleHud" class="hidden"></div>
   <div id="msg"></div>
-  <div id="hint">WASD / חצים – נהיגה והיגוי באוויר · רווח – קפיצה (החזקה = גבוה יותר, פעמיים באוויר) · Shift – בוסט · X – דריפט · Q/E – גלגול · I/K – הטיה · R – חזרה לנקודת ביקורת · Esc – תפריט<br>שלט: מקל – היגוי · RT – גז · LT – ברקס · A – קפיצה · B – ניטרו · X – דריפט · Y – נקודת ביקורת · Start – תפריט</div>
+  <div id="hint">WASD / חצים – נהיגה והיגוי באוויר · רווח – קפיצה (החזקה = גבוה יותר, פעמיים באוויר) · Shift – בוסט · X – דריפט · Q/E – גלגול · I/K – הטיה · R – חזרה לנקודת ביקורת · Esc – תפריט<br>שלט: מקל / חיצים – היגוי · RT – גז · LT – ברקס · A – קפיצה · B – ניטרו · X – דריפט · Y – נקודת ביקורת · Start – תפריט</div>
 </div>
 <div id="countdown" class="hidden"></div>
 
@@ -173,6 +210,7 @@
     <button id="btnRespawn" class="btn ghost"><span>חזרה לנקודת ביקורת</span></button>
     <button id="btnQuality" class="btn ghost"><span>גרפיקה: גבוהה</span></button>
     <button id="btnSound" class="btn ghost"><span>סאונד: פועל</span></button>
+    <button id="btnMusic" class="btn ghost"><span>מוזיקה: פועלת</span></button>
     <button id="btnToLobby" class="btn ghost"><span>חזרה ללובי</span></button>
     <button id="btnQuit" class="btn ghost"><span>יציאה מהחדר</span></button>
   </div>

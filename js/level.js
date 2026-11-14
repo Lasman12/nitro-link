@@ -7,15 +7,37 @@ import { tex } from './fx.js';
 
 export const CHAIN_LEN = 14;
 
-const THEMES = {
-  race: { floor: 0x2c4f8f, ramp: 0xff8a2b, wall: 0x1c2c52, hazard: 0xff3355, trimA: 0x19d3ff, trimB: 0xff7a1a, sky: [0x0a1a5c, 0x6a3fb8, 0x05060f] },
-  race2: { floor: 0x1f6f7a, ramp: 0xff4f9a, wall: 0x143c46, hazard: 0xffc21a, trimA: 0x3dffd0, trimB: 0xff5ab0, sky: [0x06284a, 0x2aa7a0, 0x040b12] },
-  race3: { floor: 0x7a2f2f, ramp: 0xffc233, wall: 0x3a1616, hazard: 0x19d3ff, trimA: 0xff7a3d, trimB: 0xffe066, sky: [0x2a0612, 0xd0552a, 0x0a0406] },
-  chain: { floor: 0x4a3390, ramp: 0x1fbf80, wall: 0x2a1d55, hazard: 0xffb41a, trimA: 0xd65bff, trimB: 0x2bffb0, sky: [0x1a0a4c, 0xb8407a, 0x07050f] },
-  chain2: { floor: 0x2f5f3a, ramp: 0xff8a2b, wall: 0x183020, hazard: 0xff3355, trimA: 0x7dff5a, trimB: 0xffd21a, sky: [0x06301e, 0x3a9a6a, 0x030a06] },
-};
-const RACE_THEMES = ['race', 'race2', 'race3'], CHAIN_THEMES = ['chain', 'chain2'];
-export const RACE_LEVELS = 30, CHAIN_LEVELS = 20;
+// ערכות נושא: צבעים, שמיים ותאורה. כל שלב מקבל ערכה + גוון + סוג קישוטים + ריצוף משלו, כך שאין שני שלבים זהים
+const TH = [
+  { n: 'ניאון', floor: 0x2c4f8f, ramp: 0xff8a2b, wall: 0x1c2c52, hazard: 0xff3355, trimA: 0x19d3ff, trimB: 0xff7a1a, sky: [0x0a1a5c, 0x6a3fb8, 0x05060f], sun: 0xfff0dc, sunI: 2.0, hemi: 0.9 },
+  { n: 'לגונה', floor: 0x1f6f7a, ramp: 0xff4f9a, wall: 0x143c46, hazard: 0xffc21a, trimA: 0x3dffd0, trimB: 0xff5ab0, sky: [0x06284a, 0x2aa7a0, 0x040b12], sun: 0xe8fff8, sunI: 2.2, hemi: 1.0 },
+  { n: 'הר געש', floor: 0x7a2f2f, ramp: 0xffc233, wall: 0x3a1616, hazard: 0x19d3ff, trimA: 0xff7a3d, trimB: 0xffe066, sky: [0x2a0612, 0xd0552a, 0x0a0406], sun: 0xffb070, sunI: 2.4, hemi: 0.7 },
+  { n: 'קרחון', floor: 0x4a80bc, ramp: 0x2f5fe0, wall: 0x3f6a98, hazard: 0xff4fa0, trimA: 0xffffff, trimB: 0x4fd8ff, sky: [0x1a55b8, 0x7fbcf0, 0x3f70a8], sun: 0xffffff, sunI: 2.1, hemi: 0.95 },
+  { n: 'מדבר', floor: 0x94702f, ramp: 0xd0452a, wall: 0x8a6a3a, hazard: 0x1e7bff, trimA: 0xfff0a0, trimB: 0xff5a1f, sky: [0x1f5fb0, 0xd89a58, 0x70501f], sun: 0xfff2d0, sunI: 2.3, hemi: 0.95 },
+  { n: "ג'ונגל", floor: 0x2f6f3a, ramp: 0xffb41a, wall: 0x1c3a22, hazard: 0xff3355, trimA: 0x7dff5a, trimB: 0xffd21a, sky: [0x06301e, 0x3a9a6a, 0x030a06], sun: 0xf0ffd0, sunI: 2.0, hemi: 0.9 },
+  { n: 'חלל', floor: 0x2a2a3a, ramp: 0xb14dff, wall: 0x14141e, hazard: 0x00e5ff, trimA: 0xb14dff, trimB: 0x00e5ff, sky: [0x000005, 0x0a0a25, 0x000000], sun: 0xd0d8ff, sunI: 1.8, hemi: 0.65 },
+  { n: 'ממתקים', floor: 0xb84a88, ramp: 0x35b8c8, wall: 0x803068, hazard: 0xffe14d, trimA: 0xffffff, trimB: 0x7afcff, sky: [0x3a70d8, 0xe080b8, 0x903870], sun: 0xffffff, sunI: 2.0, hemi: 0.95 },
+  { n: 'שקיעה', floor: 0x5a3a6a, ramp: 0xff5a3a, wall: 0x2a1a3a, hazard: 0xffd21a, trimA: 0xff9a3a, trimB: 0xff3a7a, sky: [0x2a1a5a, 0xff7a3a, 0x1a0a2a], sun: 0xff9a5a, sunI: 2.4, hemi: 0.8 },
+  { n: 'מטריקס', floor: 0x0f2a16, ramp: 0x1fbf50, wall: 0x06140a, hazard: 0xffffff, trimA: 0x2bff7a, trimB: 0x9bffb0, sky: [0x000a04, 0x06301a, 0x000000], sun: 0xb0ffc8, sunI: 1.7, hemi: 0.65 },
+];
+const CHAIN_TH = [
+  { n: 'סגול', floor: 0x4a3390, ramp: 0x1fbf80, wall: 0x2a1d55, hazard: 0xffb41a, trimA: 0xd65bff, trimB: 0x2bffb0, sky: [0x1a0a4c, 0xb8407a, 0x07050f], sun: 0xfff0dc, sunI: 2.0, hemi: 0.9 },
+  { n: 'ירוק', floor: 0x2f5f3a, ramp: 0xff8a2b, wall: 0x183020, hazard: 0xff3355, trimA: 0x7dff5a, trimB: 0xffd21a, sky: [0x06301e, 0x3a9a6a, 0x030a06], sun: 0xf0ffd0, sunI: 2.0, hemi: 0.9 },
+  TH[6], TH[8], TH[3],
+];
+const DECOR = ['cubes', 'towers', 'pyramids', 'planets', 'rings', 'pillars'];
+const FLOORS = ['grid', 'tiles', 'lanes'];
+const COLOR_KEYS = ['floor', 'ramp', 'wall', 'hazard', 'trimA', 'trimB'];
+function themeFor(base, k) {
+  const dh = ((k % 3) - 1) * 0.04, c = new THREE.Color(), T = { ...base };
+  const sh = (hex) => c.setHex(hex).offsetHSL(dh, 0, 0).getHex();
+  for (const key of COLOR_KEYS) T[key] = sh(base[key]);
+  T.sky = base.sky.map(sh);
+  T.decor = DECOR[k % DECOR.length];
+  T.floorTex = FLOORS[k % FLOORS.length];
+  return T;
+}
+export const RACE_LEVELS = 30, CHAIN_LEVELS = 20, VS_MAPS = 30, BATTLE_MAPS = 4;
 const ONE = new THREE.Vector3(1, 1, 1), UP = new THREE.Vector3(0, 1, 0);
 const hdr = (hex, k = 2.3) => new THREE.Color(hex).multiplyScalar(k);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -31,22 +53,27 @@ function boxGeo(sx, sy, sz, tile = 4) {
 }
 
 class Builder {
-  constructor(ctx, theme) {
+  constructor(ctx, T, o = {}) {
     this.ctx = ctx;
-    this.theme = theme;
-    const T = (this.T = THEMES[theme]);
+    this.T = T;
+    this.dry = !!ctx.dry; // ריצה "יבשה": רק מחשבים את צורת המסלול (לתמונת התצוגה המקדימה)
+    this.arena = !!o.arena;
     this.p = new THREE.Vector3(0, 0, 0);
     this.yaw = 0;
     this.buckets = {};
     this.group = new THREE.Group();
     this.cps = []; this.pads = []; this.dyn = []; this.buttons = []; this.finish = null; this.minY = 0;
-    this.path = []; // נקודות לאורך המסלול – כדי שקישוטים לא יונחו עליו
+    this.path = []; // נקודות לאורך המסלול – כדי שקישוטים לא יונחו עליו, ולזיהוי נפילה
+    this.segs = [];
     // בשרשרת הרצפות הן "מגדלים" עמוקים: מכונית שתלויה על השרשרת נשענת על הקיר ועולה לאורכו,
     // במקום להיסחף אל מתחת לפלטפורמה ולהיתקע שם
-    this.thick = theme.startsWith('chain') ? 24 : 1.2;
-    const std = (o) => new THREE.MeshStandardMaterial({ metalness: 0.15, roughness: 0.72, envMapIntensity: 0.6, ...o });
+    this.thick = o.chain ? 24 : 1.2;
+    this.mats = {};
+    if (this.dry) return;
+    const std = (m) => new THREE.MeshStandardMaterial({ metalness: 0.15, roughness: 0.72, envMapIntensity: 0.6, ...m });
+    const ft = tex[T.floorTex || 'grid'];
     this.mats = {
-      floor: std({ map: tex.grid, color: T.floor }),
+      floor: std({ map: ft, color: T.floor }),
       ramp: std({ map: tex.grid, color: T.ramp }),
       wall: std({ color: T.wall, metalness: 0.3, roughness: 0.55 }),
       hazard: std({ map: tex.stripes, color: T.hazard, emissive: T.hazard, emissiveMap: tex.stripes, emissiveIntensity: 0.35 }),
@@ -67,10 +94,12 @@ class Builder {
   quat(pitch = 0, yawAdd = 0) { return new THREE.Quaternion().setFromEuler(new THREE.Euler(pitch, this.yaw + yawAdd, 0, 'YXZ')); }
 
   addGeo(key, geo, c, q) {
+    if (this.dry) return;
     geo.applyMatrix4(new THREE.Matrix4().compose(c, q, ONE));
     (this.buckets[key] ||= []).push(geo);
   }
   body(c, size, q) {
+    if (this.dry) return;
     const b = new CANNON.Body({
       mass: 0, material: this.ctx.groundMat, shape: new CANNON.Box(new CANNON.Vec3(size[0] / 2, size[1] / 2, size[2] / 2)),
       position: new CANNON.Vec3(c.x, c.y, c.z), quaternion: new CANNON.Quaternion(q.x, q.y, q.z, q.w),
@@ -79,6 +108,7 @@ class Builder {
     this.ctx.world.addBody(b);
   }
   solid(c, size, q, key, collide = true) {
+    if (this.dry) return;
     this.addGeo(key, boxGeo(size[0], size[1], size[2]), c, q);
     if (collide) this.body(c, size, q);
     this.minY = Math.min(this.minY, c.y + size[1] / 2 - Math.min(size[1] * 1.5, 12));
@@ -93,6 +123,7 @@ class Builder {
     const n = UP.clone().applyQuaternion(q);
     const mid = this.p.clone().addScaledVector(f, len / 2).addScaledVector(l, off);
     mid.y += rise / 2;
+    this.segs.push({ x: mid.x, z: mid.z, yaw: this.yaw, w, len });
     this.solid(mid.clone().addScaledVector(n, -thick / 2), [w, thick, slope], q, rise ? 'ramp' : 'floor');
     for (const s of [-1, 1]) {
       this.addGeo(rise ? 'trimB' : 'trimA', new THREE.BoxGeometry(0.28, 0.1, slope), mid.clone().addScaledVector(l, s * (w / 2 - 0.14)).addScaledVector(n, 0.03), q);
@@ -139,7 +170,7 @@ class Builder {
 
   cp(a, w = 14) {
     const z = this.zone(a, w);
-    if (this.cps.length) {
+    if (this.cps.length && !this.dry) {
       this.arch(a, w);
       z.mesh = new THREE.Mesh(new THREE.BoxGeometry(w + 1, 0.22, 0.72), new THREE.MeshBasicMaterial({ color: hdr(this.T.trimB, 1.4) }));
       z.mesh.position.copy(this.at(a, 0, 7.05));
@@ -161,6 +192,7 @@ class Builder {
 
   // גוף קינמטי (זז לפי זמן או לפי מצב)
   kin(mesh, shapes, evalFn) {
+    if (this.dry) return {};
     const body = new CANNON.Body({ mass: 0, type: CANNON.Body.KINEMATIC, material: this.ctx.kinMat, collisionFilterGroup: G_KIN, collisionFilterMask: G_CAR });
     for (const s of shapes) body.addShape(new CANNON.Box(new CANNON.Vec3(s.size[0] / 2, s.size[1] / 2, s.size[2] / 2)), new CANNON.Vec3(...(s.off || [0, 0, 0])));
     this.ctx.world.addBody(body);
@@ -173,6 +205,7 @@ class Builder {
 
   slider(a, l, size, o = {}) {
     const { amp = 4, period = 3, phase = 0, axis = 'l', flush = false, key = 'hazard' } = o;
+    if (this.dry) return {};
     const base = this.at(a, l, flush ? -size[1] / 2 : size[1] / 2), q = this.quat();
     const ax = axis === 'l' ? this.Lf() : axis === 'f' ? this.F() : UP.clone();
     const mesh = new THREE.Mesh(boxGeo(...size), this.mats[key]);
@@ -189,6 +222,7 @@ class Builder {
 
   spinner(a, l, o = {}) {
     const { len = 20, speed = 1.4, phase = 0, h = 0.75 } = o;
+    if (this.dry) return {};
     const c = this.at(a, l, h), yaw0 = this.yaw;
     const mesh = new THREE.Mesh(boxGeo(len, 0.8, 0.8, 2), this.mats.hazard);
     const hub = new THREE.Mesh(new THREE.CylinderGeometry(1, 1.2, 1.3, 16), this.mats.wall);
@@ -201,6 +235,7 @@ class Builder {
 
   hammer(a, o = {}) {
     const { arm = 7.2, amp = 0.62, period = 3.2, phase = 0, span = 9 } = o;
+    if (this.dry) return {};
     const pivot = this.at(a, 0, arm + 1.5), qy = this.quat(), qz = new THREE.Quaternion(), Z = new THREE.Vector3(0, 0, 1);
     for (const s of [-1, 1]) this.addGeo('wall', boxGeo(0.5, arm + 3.2, 0.5), this.at(a, s * span / 2, (arm + 3.2) / 2 - 1.2), qy);
     this.addGeo('wall', boxGeo(span + 0.5, 0.5, 0.5), pivot, qy);
@@ -218,6 +253,7 @@ class Builder {
 
   button(a, l) {
     const pos = this.at(a, l, 0);
+    if (this.dry) { this.buttons.push({ pos }); return this.buttons.length - 1; }
     const mat = new THREE.MeshStandardMaterial({ color: 0x222833, emissive: 0xff5a1f, emissiveIntensity: 1.6, roughness: 0.4 });
     const mesh = new THREE.Mesh(new THREE.CylinderGeometry(2.2, 2.4, 0.14, 28), mat);
     mesh.position.copy(pos).y += 0.07;
@@ -232,6 +268,7 @@ class Builder {
 
   gate(a, o = {}) {
     const { w = 16, open = 6.5, h = 8, inputs = [], logic = 'or', hold = 0 } = o;
+    if (this.dry) return {};
     const sideW = (w - open) / 2 + 1.5, dh = h - 1.2;
     for (const s of [-1, 1]) this.block(a, s * (open / 2 + sideW / 2), [sideW, h, 1.2], 'wall');
     this.solid(this.at(a, 0, h - 0.6), [open, 1.2, 1.2], this.quat(), 'wall');
@@ -250,6 +287,7 @@ class Builder {
 
   elevator(a, o = {}) {
     const { w = 8, len = 7, rise = 7, inputs = [] } = o;
+    if (this.dry) return {};
     const base = this.at(a + len / 2, 0, -0.4), q = this.quat(), btn = this.buttons, solo = this.ctx.solo;
     const mesh = new THREE.Mesh(boxGeo(w, 0.8, len), this.mats.ramp);
     const rim = new THREE.Mesh(new THREE.BoxGeometry(w + 0.1, 0.14, len + 0.1), this.mats.trimB);
@@ -265,19 +303,47 @@ class Builder {
   }
 
   decor() {
-    let seed = 7;
+    let seed = 7 + (this.T.floor % 97);
     const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
-    const pts = [...this.cps, this.finish].filter(Boolean);
+    const pts = [...this.cps, this.finish].filter(Boolean), kind = this.T.decor || 'cubes';
+    const yq = new THREE.Quaternion();
     for (const z of pts) {
       for (let i = 0; i < 9; i++) {
         const side = rnd() > 0.5 ? 1 : -1, s = 4 + rnd() * 12;
         const c = z.pos.clone().addScaledVector(z.l, side * (38 + rnd() * 70)).addScaledVector(z.f, rnd() * 90 - 45);
         c.y += rnd() * 70 - 50;
-        if (this.path.some((pt) => Math.hypot(pt.x - c.x, pt.z - c.z) < 24 + s)) continue;
-        const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(rnd(), rnd() * 3, rnd()));
-        this.addGeo('wall', boxGeo(s, s * (0.5 + rnd() * 2), s), c, q);
-        this.addGeo(rnd() > 0.5 ? 'trimA' : 'trimB', new THREE.BoxGeometry(s * 1.03, 0.25, s * 1.03), c, q);
+        const r1 = rnd(), r2 = rnd(), r3 = rnd();
+        if (this.path.some((pt) => Math.hypot(pt.x - c.x, pt.z - c.z) < 26 + s * 1.6)) continue;
+        const trim = r1 > 0.5 ? 'trimA' : 'trimB';
+        const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(r1, r2 * 3, r3));
+        yq.setFromAxisAngle(UP, r2 * 3);
+        if (kind === 'towers') {
+          const h = 70 + r1 * 130;
+          c.y += 10 - h / 2;
+          this.addGeo('wall', boxGeo(s, h, s), c, yq);
+          for (let k = 0; k < 3; k++) this.addGeo(trim, new THREE.BoxGeometry(s * 1.04, 0.5, s * 1.04), c.clone().setY(c.y + h / 2 - 2 - k * 9), yq);
+        } else if (kind === 'pyramids') {
+          this.addGeo('wall', new THREE.ConeGeometry(s, s * 1.6, 4), c.clone().setY(c.y + s * 0.8), yq);
+          this.addGeo('wall', new THREE.ConeGeometry(s, s * 1.6, 4).rotateX(Math.PI), c.clone().setY(c.y - s * 0.8), yq);
+          this.addGeo(trim, new THREE.TorusGeometry(s * 1.02, 0.18, 4, 4).rotateX(Math.PI / 2).rotateY(Math.PI / 4), c, yq);
+        } else if (kind === 'planets') {
+          this.addGeo('wall', new THREE.SphereGeometry(s * 0.9, 14, 10), c, q);
+          this.addGeo(trim, new THREE.TorusGeometry(s * 1.5, 0.22, 5, 36).rotateX(Math.PI / 2), c, q);
+        } else if (kind === 'rings') {
+          this.addGeo(trim, new THREE.TorusGeometry(s * 1.5, 0.3, 6, 32), c, q);
+          this.addGeo('wall', new THREE.TorusGeometry(s * 1.5 + 1.2, 0.7, 6, 32), c, q);
+        } else if (kind === 'pillars') {
+          const h = 60 + r1 * 100;
+          c.y += 8 - h / 2;
+          this.addGeo('wall', new THREE.CylinderGeometry(s * 0.45, s * 0.6, h, 10), c, yq);
+          this.addGeo(trim, new THREE.TorusGeometry(s * 0.62, 0.3, 5, 20).rotateX(Math.PI / 2), c.clone().setY(c.y + h / 2), yq);
+          this.addGeo('wall', new THREE.SphereGeometry(s * 0.38, 10, 8), c.clone().setY(c.y + h / 2 + s * 0.7), yq);
+        } else {
+          this.addGeo('wall', boxGeo(s, s * (0.5 + r3 * 2), s), c, q);
+          this.addGeo(trim, new THREE.BoxGeometry(s * 1.03, 0.25, s * 1.03), c, q);
+        }
       }
+      if (this.arena) continue;
       const ring = new THREE.Mesh(new THREE.TorusGeometry(z.w / 2 + 9, 0.35, 8, 48), this.mats.trimA);
       ring.position.copy(z.pos).y += 3;
       ring.quaternion.copy(new THREE.Quaternion().setFromEuler(new THREE.Euler(0, z.yaw, 0)));
@@ -295,11 +361,11 @@ class Builder {
       this.group.add(m);
     }
     this.ctx.scene.add(this.group);
-    const { cps, pads, dyn, buttons, finish, group, mats, theme } = this;
+    const { cps, pads, dyn, buttons, finish, group, mats, path, T } = this;
     const tq = new THREE.Quaternion();
     const green = hdr(0x2bff7a, 1.4), idle = hdr(this.T.trimB, 1.4);
     return {
-      theme, sky: this.T.sky, group, cps, pads, dyn, buttons, finish, killY: this.minY - 40,
+      sky: T.sky, look: T, path, group, cps, pads, dyn, buttons, finish, killY: this.minY - 40,
 
       inZone(z, p) {
         const dx = p.x - z.pos.x, dy = p.y - z.pos.y, dz = p.z - z.pos.z;
@@ -308,6 +374,12 @@ class Builder {
       inPad(pd, p) {
         const dx = p.x - pd.pos.x, dy = p.y - pd.pos.y, dz = p.z - pd.pos.z;
         return Math.abs(dx * pd.f.x + dz * pd.f.z) < 3 && Math.abs(dx * pd.l.x + dz * pd.l.z) < 2 && dy > -0.5 && dy < 2.2;
+      },
+      // גובה המסלול הקרוב ביותר – כדי לזהות נפילה מהר, גם בחלקים גבוהים של המסלול
+      floorNear(p) {
+        let best = 1e18, y = 0;
+        for (const pt of path) { const dd = (pt.x - p.x) ** 2 + (pt.z - p.z) ** 2; if (dd < best) { best = dd; y = pt.y; } }
+        return y;
       },
       spawn(i, slot, count = 1) {
         const z = cps[clamp(i, 0, cps.length - 1)], cols = Math.min(4, count);
@@ -535,37 +607,126 @@ const R = {
     b.gap(lerp(5, 8, d));
   },
 };
-const R_UNLOCK = { straight: 1, hurdles: 1, rampJump: 1, pillars: 2, sliders: 4, stairs: 5, bigJump: 6, sweepers: 7, rails: 8, hammers: 9, movers: 11, islands: 12 };
+Object.assign(R, {
+  bumps(b, d, r, w) {
+    const n = 2 + Math.round(d * 2);
+    for (let i = 0; i < n; i++) { b.seg(7, { w, rise: 1.5 }); b.seg(7, { w, rise: -1.5 }); b.seg(lerp(10, 5, d), { w }); }
+  },
+  climb(b, d, r, w) { b.pad(4, 0); b.seg(36, { w, rise: lerp(6, 10, d) }); b.seg(16, { w }); },
+  downhill(b, d, r, w) { b.seg(12, { w }); b.seg(30, { w, rise: -lerp(4, 8, d) }); b.pad(6, 0); b.seg(26, { w }); },
+  // שיקאן: קירות שחוסמים חצי מסלול, פעם מימין ופעם משמאל
+  chicane(b, d, r, w) {
+    const n = 3 + Math.round(d * 3), sp = lerp(20, 13, d);
+    let side = r() > 0.5 ? 1 : -1;
+    for (let i = 0; i < n; i++) { b.wall(12 + i * sp, side * w * 0.21, [w * 0.58, 3, 1.4]); side = -side; }
+    b.seg(12 + n * sp + 8, { w });
+  },
+  narrow(b, d, r, w) { b.seg(lerp(26, 42, d), { w: lerp(6, 3.4, d) }); b.seg(8, { w }); },
+  dropJump(b, d, r, w) { b.pad(6, 0); b.seg(18, { w }); b.gap(lerp(6, 12, d), -lerp(3, 6, d)); b.seg(32, { w: w + 2 }); },
+  zigzag(b, d, r, w) {
+    const zw = lerp(8, 5.5, d), n = 4 + Math.round(d * 3);
+    for (let i = 0; i < n; i++) b.seg(13, { w: zw, off: (i % 2 ? 1 : -1) * zw * 0.3 });
+    b.seg(8, { w });
+  },
+});
+const R_UNLOCK = { straight: 1, hurdles: 1, rampJump: 1, pillars: 2, bumps: 3, climb: 3, sliders: 4, stairs: 5, downhill: 5, bigJump: 6, chicane: 6, sweepers: 7, rails: 8, narrow: 8, hammers: 9, dropJump: 9, movers: 11, islands: 12, zigzag: 13 };
 
-function genRace(b, L) {
-  const d = (L - 1) / (RACE_LEVELS - 1), r = rng(L * 7919 + 13), w = Math.round(lerp(18, 11, d));
-  const pool = Object.keys(R_UNLOCK).filter((k) => R_UNLOCK[k] <= L);
-  const fresh = Object.keys(R_UNLOCK).filter((k) => R_UNLOCK[k] === L && k !== 'straight');
-  const n = Math.round(lerp(4, 13, d));
+// מסלול מירוץ כללי. פניות: המסלול פונה רק ימינה/שמאלה ביחס לכיוון ההתחלה ולעולם לא חוזר אחורה, כך שהוא לא חוצה את עצמו
+function genTrack(b, o) {
+  const { r, d, n, w, pool, fresh = [], cpEvery = 1, turns = true, combo = 0 } = o;
   b.cp(14, w + 4); b.arch(27, w + 4, 'start');
   b.seg(34, { w: w + 4 });
   b.pad(10, 0);
   b.seg(30, { w });
-  let last = '', dir = -1, since = 0;
+  let last = '', h = 0, since = 0, nextTurn = 2 + Math.floor(r() * 3);
   for (let i = 0; i < n; i++) {
     let k;
     if (i < fresh.length) k = fresh[i]; // קטע חדש מוצג בתחילת השלב שבו הוא נפתח
     else do { k = pool[Math.floor(r() * pool.length)]; } while (k === last || (k === 'straight' && d > 0.5));
     last = k;
-    if (d < 0.55 || i % 2 === 0) b.cp(8, w);
+    if (i % cpEvery === 0) b.cp(8, w);
+    if (r() < combo) b.block(10, 0, [w, 1, 1.2]); // בשלבים הקשים: משוכה גם בקטעי החיבור
     b.seg(18, { w });
     R[k](b, d, r, w);
     since++;
-    if (L >= 2 && since >= 3 && i < n - 1) {
+    if (turns && since >= nextTurn && i < n - 1) {
+      const sgn = h === 0 ? (r() > 0.5 ? 1 : -1) : -h;
       b.seg(12, { w });
-      b.plaza(Math.max(26, w + 10), 90 * dir);
-      dir = -dir; since = 0;
+      b.plaza(Math.max(26, w + 10), 90 * sgn);
+      h += sgn; since = 0; nextTurn = 2 + Math.floor(r() * 3);
     }
   }
   b.seg(20, { w });
   b.finishLine(28, w + 8);
   b.wall(63, 0, [w + 8, 2, 0.8]);
   b.seg(64, { w: w + 8 });
+}
+
+// קושי: עד שלב 10 עלייה מתונה, ומשם והלאה עקומה תלולה יותר
+const raceDiff = (L) => (L <= 10 ? ((L - 1) / 9) * 0.42 : 0.47 + 0.53 * Math.pow((L - 10) / (RACE_LEVELS - 10), 0.75));
+function genRace(b, L) {
+  const d = raceDiff(L), r = rng(L * 7919 + 13);
+  genTrack(b, {
+    r, d, w: Math.round(lerp(18, 10, d)), n: Math.round(lerp(4, 15, d)), turns: L >= 2,
+    pool: Object.keys(R_UNLOCK).filter((k) => R_UNLOCK[k] <= L),
+    fresh: Object.keys(R_UNLOCK).filter((k) => R_UNLOCK[k] === L && k !== 'straight'),
+    cpEvery: d < 0.55 ? 1 : 2, combo: L > 10 ? (d - 0.4) * 0.8 : 0,
+  });
+}
+
+// מפות מירוץ החברים: 1–10 קצרות, 11–20 בינוניות, 21–30 ארוכות
+const VS_SIZES = ['קצר', 'בינוני', 'ארוך'];
+const vsSize = (M) => Math.min(2, Math.floor((M - 1) / 10));
+function genVs(b, M) {
+  const r = rng(M * 9973 + 5), d = 0.12 + r() * 0.5;
+  genTrack(b, { r, d, w: Math.round(lerp(20, 14, d)), n: [4, 8, 13][vsSize(M)], pool: Object.keys(R_UNLOCK).filter((k) => k !== 'narrow' && k !== 'rails') });
+}
+
+// ---------- זירות קרב ----------
+const ARENAS = [
+  { n: 'הזירה', R: 24 }, { n: 'הטבעת', R: 27 }, { n: 'האיים', R: 9 }, { n: 'המגדל', R: 30 },
+];
+function plat(b, x, z, sx, sz, y = 0) { b.yaw = 0; b.p.set(x, y, z - sz / 2); b.seg(sz, { w: sx, stay: true }); }
+function put(b, x, z, yaw = 0, y = 0) { b.p.set(x, y, z); b.yaw = yaw; }
+function genArena(b, A) {
+  if (A === 1) {
+    plat(b, 0, 0, 72, 72);
+    put(b, 0, 0); b.block(0, 0, [14, 1.2, 14], 'ramp');
+    put(b, -21, 0); b.spinner(0, 0, { len: 20, speed: 0.9 });
+    put(b, 21, 0); b.spinner(0, 0, { len: 20, speed: -0.9 });
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+      put(b, sx * 35.4, sz * 24); b.wall(0, 0, [0.8, 1.4, 22]);
+      put(b, sx * 24, sz * 35.4); b.wall(0, 0, [22, 1.4, 0.8]);
+    }
+    put(b, 0, -24); b.pad(0, 0); put(b, 0, 24, Math.PI); b.pad(0, 0);
+  } else if (A === 2) {
+    plat(b, 0, -27, 78, 24); plat(b, 0, 27, 78, 24); plat(b, -27, 0, 24, 30); plat(b, 27, 0, 24, 30);
+    plat(b, 0, 0, 5, 30);
+    put(b, -27, -27); b.spinner(0, 0, { len: 16, speed: 1.1 });
+    put(b, 27, 27); b.spinner(0, 0, { len: 16, speed: -1.1 });
+    put(b, 27, -27, -Math.PI / 2); b.pad(0, 0); put(b, -27, 27, Math.PI / 2); b.pad(0, 0);
+  } else if (A === 3) {
+    plat(b, 0, 0, 30, 30);
+    for (const [x, z] of [[36, 0], [-36, 0], [0, 36], [0, -36]]) {
+      plat(b, x, z, 20, 20);
+      plat(b, x * 0.57, z * 0.57, x ? 11 : 5, x ? 5 : 11);
+      put(b, x, z, Math.atan2(-x, -z)); b.pad(0, 0);
+    }
+    put(b, 0, 0); b.spinner(0, 0, { len: 18, speed: 1.0 });
+  } else {
+    plat(b, 0, 0, 80, 80);
+    put(b, 0, 0); b.block(0, 0, [40, 1.3, 40], 'floor');
+    put(b, 0, 0, 0, 1.3); b.block(0, 0, [16, 1.3, 16], 'ramp');
+    for (let i = 0; i < 4; i++) {
+      const a = (i * Math.PI) / 2;
+      put(b, -Math.sin(a) * 28, -Math.cos(a) * 28, a); b.seg(8, { w: 8, rise: 1.3, stay: true });
+      put(b, -Math.sin(a + 0.78) * 44, -Math.cos(a + 0.78) * 44, a + 0.78 + Math.PI / 2); b.pad(0, 0);
+    }
+    put(b, 0, 0);
+  }
+  put(b, 0, 0);
+  b.cps.push(b.zone(0, 20));
+  b.finish = b.zone(0, 1);
 }
 
 // קטעי שרשרת (רוחב 16, מתאים לשתי מכוניות זו לצד זו)
@@ -648,13 +809,54 @@ function genChain(b, L) {
 // שלב 10 במירוץ ושלב 6 בשרשרת הם המסלולים המקוריים שנבנו ידנית
 const HAND_RACE = 10, HAND_CHAIN = 6;
 
+function make(mode, level, ctx) {
+  let L = Math.round(level) || 1, b;
+  if (mode === 'chain') {
+    L = clamp(L, 1, CHAIN_LEVELS);
+    b = new Builder(ctx, themeFor(CHAIN_TH[(L - 1) % CHAIN_TH.length], L), { chain: true });
+    if (L === HAND_CHAIN) chainCourse(b); else genChain(b, L);
+  } else if (mode === 'vs') {
+    L = clamp(L, 1, VS_MAPS);
+    b = new Builder(ctx, themeFor(TH[(L * 3 + 1) % TH.length], L + 2));
+    genVs(b, L);
+  } else if (mode === 'battle') {
+    L = clamp(L, 1, BATTLE_MAPS);
+    b = new Builder(ctx, themeFor(TH[[2, 6, 1, 8][L - 1]], L), { arena: true });
+    genArena(b, L);
+  } else {
+    L = clamp(L, 1, RACE_LEVELS);
+    b = new Builder(ctx, themeFor(TH[(L - 1) % TH.length], L));
+    if (L === HAND_RACE) raceCourse(b); else genRace(b, L);
+  }
+  return { b, L };
+}
+
 export function buildLevel(mode, level, ctx) {
-  const chain = mode === 'chain';
-  const L = clamp(Math.round(level) || 1, 1, chain ? CHAIN_LEVELS : RACE_LEVELS);
-  const themes = chain ? CHAIN_THEMES : RACE_THEMES;
-  const b = new Builder(ctx, themes[Math.floor((L - 1) / 3) % themes.length]);
-  if (chain) { if (L === HAND_CHAIN) chainCourse(b); else genChain(b, L); } else if (L === HAND_RACE) raceCourse(b); else genRace(b, L);
+  const { b, L } = make(mode, level, ctx);
   const lv = b.build();
   lv.level = L;
+  if (mode === 'battle') {
+    const R = ARENAS[L - 1].R;
+    lv.finish.pos.y = -1e6;
+    lv.killY = -16;
+    lv.spawn = (i, slot, count = 1) => {
+      const a = (slot / Math.max(1, count)) * Math.PI * 2 + (i || 0);
+      return { pos: new THREE.Vector3(Math.sin(a) * R, L === 4 ? 1.2 : 1.2, Math.cos(a) * R), yaw: a + Math.PI };
+    };
+  }
   return lv;
+}
+
+// שם ואורך של מפה (ללובי)
+export function mapInfo(mode, level) {
+  if (mode === 'battle') return { name: ARENAS[clamp(level, 1, BATTLE_MAPS) - 1].n, size: '' };
+  const L = clamp(level, 1, VS_MAPS);
+  return { name: `${TH[(L * 3 + 1) % TH.length].n} ${L}`, size: VS_SIZES[vsSize(L)] };
+}
+
+// צורת המסלול מלמעלה, לציור תמונת התצוגה המקדימה
+export function trackShape(mode, level) {
+  const { b } = make(mode, level, { dry: true, solo: true });
+  const css = (hex) => '#' + new THREE.Color(hex).getHexString();
+  return { segs: b.segs, start: b.cps[0].pos, finish: mode === 'battle' ? null : b.finish.pos, floor: css(b.T.floor), trim: css(b.T.trimA), sky: css(b.T.sky[1]) };
 }

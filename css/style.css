@@ -231,3 +231,64 @@ body.touch #board { display: none; }
 .mode.off { opacity: .4; }
 .note { margin: 0; font-size: 13px; color: #ffd27a; min-height: 0; }
 .note:empty { display: none; }
+
+/* מצבים, מפות ותצוגה מקדימה */
+#modes { display: grid; grid-template-columns: 1fr 1fr; }
+#levels.maps { grid-template-columns: repeat(3, 1fr); max-height: 230px; gap: 6px; direction: rtl; }
+#levels h4 { grid-column: 1 / -1; margin: 4px 0 0; font-size: 13px; opacity: .75; }
+.map { font: inherit; color: #fff; cursor: pointer; padding: 0 0 4px; border-radius: 9px; border: 2px solid transparent; background: rgba(255, 255, 255, .08); overflow: hidden; display: block; min-height: 96px; }
+.map img { width: 100%; height: auto; aspect-ratio: 16 / 10; display: block; margin-bottom: 3px; }
+.map b { font-size: 12px; font-weight: 600; display: block; }
+#levels.maps { grid-auto-rows: max-content; }
+.map.on { border-color: var(--orange); background: rgba(255, 138, 43, .25); }
+.map:disabled { cursor: default; }
+
+/* ניטרו, קרב ומידע */
+#nitro { position: absolute; bottom: 46px; left: 170px; width: 230px; display: flex; align-items: center; gap: 9px; direction: ltr; }
+#nitro b { font-style: italic; font-weight: 900; font-size: 15px; color: var(--orange); text-shadow: 0 0 10px rgba(255, 138, 43, .7); letter-spacing: 1px; }
+.nbar { flex: 1; height: 16px; border-radius: 4px; transform: skewX(-14deg); background: rgba(0, 0, 0, .55); border: 1px solid rgba(255, 180, 90, .55); overflow: hidden; }
+.nbar i { display: block; height: 100%; width: 100%; background: linear-gradient(90deg, #ff5a1f, #ffd21a); box-shadow: 0 0 12px rgba(255, 160, 40, .8); }
+#nitro.on .nbar i { background: linear-gradient(90deg, #ffd21a, #fff); }
+#nitro.low .nbar { border-color: #ff3355; animation: blink .5s infinite; }
+@keyframes blink { 50% { opacity: .35; } }
+#info { position: absolute; top: 90px; left: 50%; transform: translateX(-50%); font-weight: 700; font-size: 15px; background: var(--bg); border-radius: 16px; padding: 4px 14px; white-space: nowrap; }
+#info:empty { display: none; }
+#battleHud { position: absolute; bottom: 26px; left: 50%; transform: translateX(-50%); text-align: center; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 6px 16px; display: flex; flex-direction: column; }
+#battleHud b { font-size: 24px; color: #ff3355; letter-spacing: 3px; }
+#battleHud s { text-decoration: none; opacity: .22; }
+#battleHud small { opacity: .8; font-weight: 600; }
+body.touch #nitro { bottom: auto; top: 14px; left: 14px; width: 150px; }
+body.touch #hint { display: none; }
+
+/* פודיום */
+.podium { display: flex; align-items: flex-end; justify-content: center; gap: 6px; direction: ltr; margin: 6px 0 10px -22px; }
+.pd { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 0; }
+.pd b { font-size: 15px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pd.me b { color: var(--orange); }
+.pd small { font-size: 12px; opacity: .8; direction: ltr; font-variant-numeric: tabular-nums; }
+.pd u { width: 26px; height: 14px; border-radius: 5px 5px 3px 3px; box-shadow: 0 0 10px rgba(255, 255, 255, .35); }
+.pd i { width: 100%; display: flex; align-items: center; justify-content: center; font-style: normal; font-weight: 900; font-size: 26px; border-radius: 7px 7px 0 0; color: #1a1205; }
+.pd.p1 i { height: 86px; background: linear-gradient(#ffe27a, #e0a010); }
+.pd.p2 i { height: 60px; background: linear-gradient(#eef2f8, #9aa6b8); }
+.pd.p3 i { height: 42px; background: linear-gradient(#f0b07a, #a8642a); }
+.pd.none { opacity: .3; }
+
+/* גביעים, מטבעות, דרך הגביעים וחנות */
+.wallet { display: flex; gap: 14px; font-weight: 800; font-size: 15px; }
+.wallet span { background: rgba(255, 255, 255, .08); border-radius: 14px; padding: 2px 11px; }
+.items { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 5px; max-height: 48vh; overflow-y: auto; }
+.items li { display: flex; align-items: center; gap: 9px; padding: 8px 10px; border-radius: 9px; background: rgba(255, 255, 255, .06); font-size: 15px; border-inline-start: 4px solid rgba(255, 255, 255, .15); }
+.items li i { width: 30px; height: 30px; border-radius: 8px; flex: none; border: 1px solid rgba(255, 255, 255, .3); }
+.items li b { font-weight: 600; }
+.items li .at { width: 62px; font-weight: 800; font-size: 13px; opacity: .85; flex: none; }
+.items li em, .items li .chip { margin-inline-start: auto; font-style: normal; font-size: 13px; opacity: .75; flex: none; }
+.items li .chip { opacity: 1; font-weight: 800; }
+.items li .chip:disabled { opacity: .4; cursor: default; }
+.items li.can { border-inline-start-color: #2bffb0; background: rgba(43, 255, 176, .13); }
+.items li.got { border-inline-start-color: var(--orange); opacity: .6; }
+.items li.far { opacity: .75; }
+.chip.locked { opacity: .5; }
+
+@media (max-width: 720px) {
+  #nitro { left: 14px; bottom: auto; top: 60px; width: 150px; }
+}

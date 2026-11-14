@@ -24,6 +24,23 @@ export const tex = {
       for (const [x, y] of [[26, 26], [w - 26, 26], [26, w - 26], [w - 26, w - 26]]) { g.beginPath(); g.arc(x, y, 5, 0, 7); g.fill(); }
     }));
   },
+  get tiles() {
+    return (cache.tiles ||= canvasTex(256, 256, (g, w) => {
+      g.fillStyle = '#b4bdd2'; g.fillRect(0, 0, w, w);
+      g.fillStyle = '#d2daec';
+      g.beginPath(); g.moveTo(w / 2, 8); g.lineTo(w - 8, w / 2); g.lineTo(w / 2, w - 8); g.lineTo(8, w / 2); g.fill();
+      g.strokeStyle = '#5f6a86'; g.lineWidth = 5;
+      g.beginPath(); g.moveTo(w / 2, 0); g.lineTo(w, w / 2); g.lineTo(w / 2, w); g.lineTo(0, w / 2); g.closePath(); g.stroke();
+    }));
+  },
+  get lanes() {
+    return (cache.lanes ||= canvasTex(256, 256, (g, w) => {
+      g.fillStyle = '#b9c2d8'; g.fillRect(0, 0, w, w);
+      g.fillStyle = '#8f9ab6'; g.fillRect(0, 0, w, 10); g.fillRect(0, w / 2 - 5, w, 10);
+      g.fillStyle = '#eef3ff';
+      for (let x = 0; x < w; x += 64) { g.fillRect(x + 8, w / 4 - 4, 40, 8); g.fillRect(x + 8, (w * 3) / 4 - 4, 40, 8); }
+    }));
+  },
   get stripes() {
     return (cache.stripes ||= canvasTex(128, 128, (g, w) => {
       g.fillStyle = '#ffffff'; g.fillRect(0, 0, w, w);

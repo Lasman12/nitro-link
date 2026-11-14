@@ -1,6 +1,7 @@
 // מכונית: פיזיקה ארקיידית (מתלים בקרני-ריי, קפיצה, בוסט, שליטה באוויר) + מודל תלת-ממדי להתאמה אישית
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
+import { GRADS, FEATHERS } from './items.js';
 
 export const G_WORLD = 1, G_CAR = 2, G_KIN = 4, G_REMOTE = 8;
 
@@ -46,7 +47,7 @@ export class CarPhysics {
       [P.wheelX, P.wheelZf, true], [-P.wheelX, P.wheelZf, true],
       [P.wheelX, P.wheelZr, false], [-P.wheelX, P.wheelZr, false],
     ].map(([x, z, front]) => ({ local: new CANNON.Vec3(x, P.mountY, z), front, len: RAY - 0.13, hit: false }));
-    this.steer = 0; this.spin = 0; this.boost = 100;
+    this.steer = 0; this.spin = 0; this.boost = 100; this.regen = 9;
     this.grounded = 0; this.airT = 0; this.jumpT = 1; this.jumped = false; this.airJumps = 1;
     this.boosting = false; this.flipT = 0; this.didJump = false; this.jumpBuf = 0; this.holdT = 0; this.supported = true;
   }
@@ -72,6 +73,8 @@ export class CarPhysics {
     const maxSteer = 0.5 - 0.37 * Math.min(1, sp / 38);
     this.steer += (inp.steer * maxSteer - this.steer) * Math.min(1, dt * 12);
     this.jumpT += dt;
+    // סיבוב במקום: במהירות נמוכה ההיגוי מסובב את המכונית עצמה, כדי להתיישר מהר בלי תמרונים
+    const pivot = inp.steer && !locked ? clamp(1 - sp / 7, 0, 1) : 0;
     this.boosting = !locked && inp.boost && this.boost > 0;
     const suspActive = this.jumpT > 0.12;
     let grounded = 0;
@@ -109,7 +112,7 @@ export class CarPhysics {
           const vfw = pv.dot(wf), vs = pv.dot(ws);
           // אחיזה צידית
           const drifting = inp.drift && !w.front;
-          let Fl = -vs * (P.mass / 4) * (drifting ? 5 : 32);
+          let Fl = -vs * (P.mass / 4) * (drifting ? 5 : 32) * (1 - 0.85 * pivot);
           const maxL = (drifting ? 0.55 : 2.4) * Math.max(Fs, P.mass * P.gravity * 0.15);
           Fl = clamp(Fl, -maxL, maxL);
           // הנעה / בלימה
@@ -153,6 +156,10 @@ export class CarPhysics {
     }
 
     this.supported = grounded >= 2 || beached;
+    if (pivot > 0 && this.supported) {
+      const want = inp.steer * 2.7 * pivot * (th < 0 ? -1 : 1);
+      av.vadd(up.scale((want - av.dot(up)) * Math.min(1, dt * 14), tmp), av);
+    }
     if (grounded >= 2) {
       this.airT = 0; this.airJumps = 1;
       if (this.jumpT > 0.2) this.jumped = false;
@@ -166,7 +173,7 @@ export class CarPhysics {
       const f = clamp((P.boostSpeed + 2 - vel.dot(fwd)) / 6, 0, 1);
       b.force.vadd(fwd.scale(P.mass * P.boostAcc * f, tmp), b.force);
       this.boost = Math.max(0, this.boost - 28 * dt);
-    } else if (grounded >= 2 && !inp.boost) this.boost = Math.min(100, this.boost + 9 * dt);
+    } else if (grounded >= 2 && !inp.boost) this.boost = Math.min(100, this.boost + this.regen * dt);
 
     // קפיצה: לחיצה קצרה = קפיצה נמוכה, החזקה = גבוהה. לחיצה רגע לפני הנחיתה נזכרת (buffer)
     this.didJump = false;
@@ -246,12 +253,12 @@ export const SKIN_OPTS = {
   finishes: ['מבריק', 'מטאלי', 'מט', 'כרום'],
   wheels: ['קלאסי', 'ניאון', 'חישורים'],
   spoilers: ['ללא', 'כנף', 'כנף מירוץ', 'סנפיר'],
-  toppers: ['ללא', 'אנטנה', 'כתר', 'קרניים', 'מדחף'],
+  toppers: ['ללא', 'אנטנה', 'כתר', 'קרניים', 'מדחף', 'הילה', 'ברווז גומי'],
   colors: ['#1e7bff', '#ff7a1a', '#ff2d55', '#22d38a', '#ffd21a', '#b14dff', '#00e5ff', '#ff5ad1', '#ffffff', '#20242e', '#8a5a2b', '#9be600'],
 };
 export const DEFAULT_SKIN = {
   type: 0, color: '#1e7bff', accent: '#ff7a1a', finish: 0, wheel: 1, rim: '#ffffff',
-  spoiler: 1, topper: 0, glow: '#00e5ff', trail: '#ff9a2e',
+  spoiler: 1, topper: 0, glow: '#00e5ff', trail: '#ff9a2e', wrap: 0, grad: 0, feather: 0,
 };
 
 const TYPES = [
@@ -295,6 +302,76 @@ function paintMat(color, finish) {
 }
 const hdr = (hex, k = 2.4) => new THREE.Color(hex).multiplyScalar(k);
 
+// טקסטורת צבע למרכב: צבע/גרדיאנט + טפט. u = לאורך המכונית (1 = חזית), v = לרוחב
+function paintTex(s) {
+  const c = document.createElement('canvas'), W = (c.width = 256), H = (c.height = 128);
+  const g = c.getContext('2d'), G = GRADS[s.grad], a = s.accent;
+  if (G) { const gr = g.createLinearGradient(0, 0, W, 0); gr.addColorStop(0, G.b); gr.addColorStop(1, G.a); g.fillStyle = gr; } else g.fillStyle = s.color;
+  g.fillRect(0, 0, W, H);
+  let seed = 11;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  g.fillStyle = a; g.strokeStyle = a;
+  switch (s.wrap) {
+    case 1: g.fillRect(0, H * 0.39, W, H * 0.08); g.fillRect(0, H * 0.53, W, H * 0.08); break;
+    case 2: {
+      const gr = g.createLinearGradient(W, 0, W - 170, 0);
+      gr.addColorStop(0, '#fff3a0'); gr.addColorStop(0.35, '#ffb21a'); gr.addColorStop(1, '#ff2d00');
+      g.fillStyle = gr;
+      for (let i = 0; i < 8; i++) {
+        const y = (i * H) / 8, len = 70 + rnd() * 100;
+        g.beginPath(); g.moveTo(W, y - 3); g.quadraticCurveTo(W - len * 0.5, y + H / 16 - 8, W - len, y + H / 16); g.quadraticCurveTo(W - len * 0.4, y + H / 16 + 6, W, y + H / 8 + 3); g.fill();
+      }
+      break;
+    }
+    case 3:
+      for (let i = 0; i < 46; i++) {
+        g.fillStyle = ['rgba(0,0,0,.3)', 'rgba(255,255,255,.16)', a][i % 3];
+        g.globalAlpha = i % 3 === 2 ? 0.45 : 1;
+        g.beginPath(); g.ellipse(rnd() * W, rnd() * H, 8 + rnd() * 22, 5 + rnd() * 12, rnd() * 3, 0, 7); g.fill();
+      }
+      g.globalAlpha = 1;
+      break;
+    case 4:
+      for (let y = 0; y < 8; y++) for (let x = 0; x < 7; x++) if ((x + y) % 2) { g.globalAlpha = 1 - x / 8; g.fillRect(x * 16, y * 16, 16, 16); }
+      g.globalAlpha = 1;
+      break;
+    case 5:
+      for (const y0 of [0.2, 0.5, 0.8]) for (const [lw, col] of [[7, a], [2.5, '#ffffff']]) {
+        seed = 5 + y0 * 100;
+        g.lineWidth = lw; g.strokeStyle = col; g.lineJoin = 'miter';
+        g.beginPath(); g.moveTo(W, y0 * H);
+        for (let x = W - 26; x > 10; x -= 26) g.lineTo(x, y0 * H + (rnd() - 0.5) * 30);
+        g.stroke();
+      }
+      break;
+    case 6:
+      for (let x = -H; x < W; x += 30) { g.beginPath(); g.moveTo(x, H); g.lineTo(x + 13, H); g.lineTo(x + 13 + H * 0.7, 0); g.lineTo(x + H * 0.7, 0); g.fill(); }
+      break;
+    case 7:
+      g.lineWidth = 2.5; g.globalAlpha = 0.85;
+      for (let y = 0; y < 9; y++) for (let x = 0; x < 15; x++) {
+        const cx = x * 18 + (y % 2 ? 9 : 0), cy = y * 15.6;
+        g.beginPath();
+        for (let k = 0; k < 6; k++) { const an = (k / 6) * Math.PI * 2 + Math.PI / 6; g[k ? 'lineTo' : 'moveTo'](cx + Math.cos(an) * 9.5, cy + Math.sin(an) * 9.5); }
+        g.closePath(); g.stroke();
+      }
+      g.globalAlpha = 1;
+      break;
+    default:
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 4;
+  return t;
+}
+function projectUV(geo, W) {
+  const p = geo.attributes.position, uv = geo.attributes.uv;
+  for (let i = 0; i < p.count; i++) {
+    const x = p.getX(i), y = p.getY(i);
+    uv.setXY(i, clamp((p.getZ(i) + 2.1) / 4.2, 0, 1), clamp(0.5 + (x / W) * 0.4 + Math.sign(x) * Math.max(0, 0.3 - y) * 0.25, 0.01, 0.99));
+  }
+}
+
 let glowTex = null;
 function getGlowTex() {
   if (glowTex) return glowTex;
@@ -317,6 +394,7 @@ export class CarVisual {
     this.wheels = [];
     this.flames = [];
     this.prop = null;
+    this.feathers = [];
     this.skin = { ...DEFAULT_SKIN, ...skin };
     this.build();
     if (name) this.setName(name);
@@ -331,13 +409,18 @@ export class CarVisual {
       g.add(m);
       return m;
     };
-    const paint = paintMat(s.color, s.finish);
+    const G = GRADS[s.grad], fancy = !!(G || s.wrap);
+    const paint = paintMat(G ? new THREE.Color(G.a).lerp(new THREE.Color(G.b), 0.5) : s.color, s.finish);
+    let bodyPaint = paint;
+    if (fancy) { bodyPaint = paintMat(0xffffff, s.finish); bodyPaint.map = paintTex(s); }
     const accent = new THREE.MeshStandardMaterial({ color: s.accent, metalness: 0.5, roughness: 0.45, envMapIntensity: 0.7 });
     const dark = new THREE.MeshStandardMaterial({ color: 0x14161c, metalness: 0.4, roughness: 0.65 });
     const glass = new THREE.MeshPhysicalMaterial({ color: 0x08121e, metalness: 0.8, roughness: 0.3, envMapIntensity: 0.8 });
     const W = T.width;
 
-    add(extrude(T.body, W, 0.07), paint);
+    const bodyGeo = extrude(T.body, W, 0.07);
+    if (fancy) projectUV(bodyGeo, W);
+    add(bodyGeo, bodyPaint);
     add(extrude(T.cabin, T.cabW, 0.05), glass);
     add(new THREE.BoxGeometry(W + 0.14, 0.12, 2.3), accent, 0, -0.3, 0);          // סף צד
     add(new THREE.BoxGeometry(W + 0.1, 0.06, 0.5), accent, 0, -0.33, 1.82);       // ספליטר
@@ -418,6 +501,32 @@ export class CarVisual {
       this.prop = add(new THREE.BoxGeometry(1.0, 0.025, 0.12), accent, 0, ry + 0.27, rz);
     }
 
+    else if (s.topper === 5) {
+      const halo = add(new THREE.TorusGeometry(0.3, 0.035, 8, 28).rotateX(Math.PI / 2), new THREE.MeshBasicMaterial({ color: hdr(0xffe27a, 2.6) }), 0, ry + 0.42, rz);
+      halo.castShadow = false;
+    } else if (s.topper === 6) {
+      const yel = new THREE.MeshStandardMaterial({ color: 0xffd21a, roughness: 0.35 });
+      add(new THREE.SphereGeometry(0.2, 14, 10), yel, 0, ry + 0.16, rz).scale.set(1, 0.8, 1.25);
+      add(new THREE.SphereGeometry(0.13, 12, 9), yel, 0, ry + 0.38, rz + 0.14);
+      add(new THREE.ConeGeometry(0.05, 0.14, 8).rotateX(Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0xff7a1a, roughness: 0.5 }), 0, ry + 0.36, rz + 0.3);
+    }
+
+    // נוצות זנב
+    this.feathers = [];
+    const FT = FEATHERS[s.feather];
+    if (FT) {
+      const sh = new THREE.Shape();
+      sh.moveTo(0, 0); sh.quadraticCurveTo(0.2, 0.45, 0.05, 1.02); sh.lineTo(0, 1.14); sh.lineTo(-0.05, 1.02); sh.quadraticCurveTo(-0.2, 0.45, 0, 0);
+      const fg = new THREE.ShapeGeometry(sh, 6), n = 7;
+      for (let i = 0; i < n; i++) {
+        const k = i - (n - 1) / 2, col = FT.c[i % FT.c.length];
+        const m = add(fg, new THREE.MeshStandardMaterial({ color: col, emissive: col, emissiveIntensity: 0.3, side: THREE.DoubleSide, roughness: 0.6 }), k * 0.11, ty - 0.02, tz - 0.12 - Math.abs(k) * 0.02);
+        m.rotation.set(-0.75, 0, -k * 0.24);
+        m.scale.setScalar(1 - Math.abs(k) * 0.07);
+        this.feathers.push(m);
+      }
+    }
+
     // זוהר תחתי
     const glow = new THREE.Mesh(
       new THREE.PlaneGeometry(3.2, 5.6).rotateX(-Math.PI / 2),
@@ -471,6 +580,7 @@ export class CarVisual {
       if (boosting) f.scale.set(1, 1, 0.7 + Math.random() * 0.6);
     }
     if (this.prop) this.prop.rotation.y = t * 18;
+    for (let i = 0; i < this.feathers.length; i++) this.feathers[i].rotation.x = -0.75 + Math.sin(t * 5 + i * 0.9) * 0.07 - (boosting ? 0.25 : 0);
   }
 
   dispose() {

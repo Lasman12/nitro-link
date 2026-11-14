@@ -292,3 +292,12 @@ body.touch #hint { display: none; }
 @media (max-width: 720px) {
   #nitro { left: 14px; bottom: auto; top: 60px; width: 150px; }
 }
+
+/* תת-קטגוריות מירוץ, חפצים והקפות */
+#levels .tabs { grid-column: 1 / -1; flex-wrap: wrap; }
+#levels .tab { font-size: 12px; padding: 6px 4px; }
+#levels .tab:disabled { cursor: default; }
+#item { position: absolute; bottom: 150px; left: 30px; pointer-events: auto; font: inherit; color: #fff; cursor: pointer; background: var(--bg); border: 2px solid var(--orange); border-radius: 12px; padding: 6px 12px; font-weight: 800; font-size: 15px; box-shadow: 0 0 18px rgba(255, 138, 43, .5); animation: pop .3s; }
+#item small { display: block; font-weight: 400; font-size: 11px; opacity: .7; }
+@keyframes pop { from { transform: scale(1.6); } }
+body.touch #item { bottom: auto; top: 120px; left: 14px; }

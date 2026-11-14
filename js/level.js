@@ -37,7 +37,10 @@ function themeFor(base, k) {
   T.floorTex = FLOORS[k % FLOORS.length];
   return T;
 }
-export const RACE_LEVELS = 30, CHAIN_LEVELS = 20, VS_MAPS = 30, BATTLE_MAPS = 4;
+export const RACE_LEVELS = 30, CHAIN_LEVELS = 20, VS_MAPS = 399, BATTLE_MAPS = 4;
+// תת-קטגוריות של מירוץ החברים. מספר המפה מקודד: קטגוריה * 100 + מספר
+export const VS_CATS = [{ n: 'רגיל', count: 30 }, { n: 'ארוך ומפותל', count: 6 }, { n: 'קרח', count: 6 }, { n: 'קארט · 3 הקפות', count: 6 }];
+export const vsSplit = (level) => { const c = Math.max(0, Math.min(3, Math.floor(level / 100))); return [c, Math.max(1, Math.min(VS_CATS[c].count, level % 100))]; };
 const ONE = new THREE.Vector3(1, 1, 1), UP = new THREE.Vector3(0, 1, 0);
 const hdr = (hex, k = 2.3) => new THREE.Color(hex).multiplyScalar(k);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -633,12 +636,12 @@ const R_UNLOCK = { straight: 1, hurdles: 1, rampJump: 1, pillars: 2, bumps: 3, c
 
 // מסלול מירוץ כללי. פניות: המסלול פונה רק ימינה/שמאלה ביחס לכיוון ההתחלה ולעולם לא חוזר אחורה, כך שהוא לא חוצה את עצמו
 function genTrack(b, o) {
-  const { r, d, n, w, pool, fresh = [], cpEvery = 1, turns = true, combo = 0 } = o;
+  const { r, d, n, w, pool, fresh = [], cpEvery = 1, turns = true, combo = 0, turnMin = 2, turnVar = 3 } = o;
   b.cp(14, w + 4); b.arch(27, w + 4, 'start');
   b.seg(34, { w: w + 4 });
   b.pad(10, 0);
   b.seg(30, { w });
-  let last = '', h = 0, since = 0, nextTurn = 2 + Math.floor(r() * 3);
+  let last = '', h = 0, since = 0, nextTurn = turnMin + Math.floor(r() * turnVar);
   for (let i = 0; i < n; i++) {
     let k;
     if (i < fresh.length) k = fresh[i]; // קטע חדש מוצג בתחילת השלב שבו הוא נפתח
@@ -653,7 +656,7 @@ function genTrack(b, o) {
       const sgn = h === 0 ? (r() > 0.5 ? 1 : -1) : -h;
       b.seg(12, { w });
       b.plaza(Math.max(26, w + 10), 90 * sgn);
-      h += sgn; since = 0; nextTurn = 2 + Math.floor(r() * 3);
+      h += sgn; since = 0; nextTurn = turnMin + Math.floor(r() * turnVar);
     }
   }
   b.seg(20, { w });
@@ -680,6 +683,48 @@ const vsSize = (M) => Math.min(2, Math.floor((M - 1) / 10));
 function genVs(b, M) {
   const r = rng(M * 9973 + 5), d = 0.12 + r() * 0.5;
   genTrack(b, { r, d, w: Math.round(lerp(20, 14, d)), n: [4, 8, 13][vsSize(M)], pool: Object.keys(R_UNLOCK).filter((k) => k !== 'narrow' && k !== 'rails') });
+}
+
+const EASY_POOL = ['straight', 'hurdles', 'rampJump', 'pillars', 'bumps', 'sliders', 'downhill', 'chicane', 'sweepers', 'dropJump', 'climb'];
+function genTwisty(b, i) {
+  const r = rng(i * 6151 + 3);
+  genTrack(b, { r, d: 0.2 + r() * 0.4, w: 16, n: 16, pool: Object.keys(R_UNLOCK).filter((k) => k !== 'narrow' && k !== 'rails'), turnMin: 1, turnVar: 2 });
+}
+function genIce(b, i) {
+  const r = rng(i * 3301 + 9);
+  b.ice = true;
+  genTrack(b, { r, d: 0.1 + r() * 0.3, w: 20, n: 5 + i, pool: EASY_POOL, turnMin: 1, turnVar: 2 });
+}
+
+// מסלולי קארט: מעגל סגור ושטוח (3 הקפות) עם תיבות הפתעה. כל צלע: [אורך ביחידות, כיוון הפנייה בסופה]
+const KART_SHAPES = [
+  [[2, 1], [1.2, 1], [2, 1], [1.2, 1]],
+  [[1.4, 1], [2.2, 1], [1.4, 1], [2.2, 1]],
+  [[2, 1], [1, 1], [1, -1], [1, 1], [1, 1], [2, 1]],
+  [[2, 1], [1, 1], [1, -1], [1, -1], [1, 1], [1, 1], [2, 1], [3, 1]],
+  [[2, -1], [1, -1], [1, 1], [1, -1], [1, -1], [2, -1]],
+  [[3, 1], [1, 1], [1, -1], [1, -1], [1, 1], [1, 1], [3, 1], [3, 1]].map(([a, t]) => [a === 3 ? 3 : a, t]),
+];
+function genKart(b, i) {
+  const r = rng(i * 4447 + 21), shape = KART_SHAPES[(i - 1) % KART_SHAPES.length], w = 18, S = 32, U = 92;
+  b.laps = 3; b.boxes = [];
+  const kinds = ['pads', 'hurdles', 'pillars', 'sliders', 'chicane', 'bump', 'pads'];
+  shape.forEach(([units, turn], leg) => {
+    const L = units * U - S;
+    if (leg === 0) { b.cp(4, w); b.finishLine(22, w); b.pad(34, -4); b.pad(34, 4); } else {
+      b.cp(5, w);
+      const k = kinds[Math.floor(r() * kinds.length)], m = L / 2;
+      if (k === 'pads') { b.pad(m - 8, (r() - 0.5) * 8); b.pad(m + 8, (r() - 0.5) * 8); }
+      else if (k === 'hurdles') { b.block(m - 9, 0, [w, 0.9, 1.2]); if (L > 80) b.block(m + 12, 0, [w, 0.9, 1.2]); }
+      else if (k === 'pillars') { for (let j = 0; j < 3; j++) b.block(m - 14 + j * 14, (j % 2 ? 1 : -1) * w * 0.22, [w * 0.28, 5, 3]); }
+      else if (k === 'sliders') { b.slider(m - 8, 0, [w * 0.34, 3.2, 2], { amp: w * 0.3, period: 3.4, phase: r() * 6 }); b.slider(m + 10, 0, [w * 0.34, 3.2, 2], { amp: w * 0.3, period: 2.8, phase: r() * 6 }); }
+      else if (k === 'chicane') { b.wall(m - 10, w * 0.21, [w * 0.56, 3, 1.4]); b.wall(m + 10, -w * 0.21, [w * 0.56, 3, 1.4]); }
+      if (leg % 2 === 1 || shape.length <= 4) for (const l of [-w / 4, 0, w / 4]) b.boxes.push(b.at(L > 80 ? 18 : 14, l, 1.3));
+      if (k === 'bump') { b.seg(m - 7, { w }); b.seg(7, { w, rise: 1.5 }); b.seg(7, { w, rise: -1.5 }); b.seg(L - m - 7, { w }); b.plaza(S, 90 * turn); return; }
+    }
+    b.seg(L, { w });
+    b.plaza(S, 90 * turn);
+  });
 }
 
 // ---------- זירות קרב ----------
@@ -816,9 +861,12 @@ function make(mode, level, ctx) {
     b = new Builder(ctx, themeFor(CHAIN_TH[(L - 1) % CHAIN_TH.length], L), { chain: true });
     if (L === HAND_CHAIN) chainCourse(b); else genChain(b, L);
   } else if (mode === 'vs') {
-    L = clamp(L, 1, VS_MAPS);
-    b = new Builder(ctx, themeFor(TH[(L * 3 + 1) % TH.length], L + 2));
-    genVs(b, L);
+    const [c, i] = vsSplit(L);
+    L = c * 100 + i;
+    if (c === 1) { b = new Builder(ctx, themeFor(TH[(i * 7 + 2) % TH.length], i + 1)); genTwisty(b, i); }
+    else if (c === 2) { b = new Builder(ctx, { ...themeFor(TH[3], i), decor: DECOR[i % DECOR.length] }); genIce(b, i); }
+    else if (c === 3) { b = new Builder(ctx, themeFor(TH[(i * 3) % TH.length], i + 3)); genKart(b, i); }
+    else { b = new Builder(ctx, themeFor(TH[(i * 3 + 1) % TH.length], i + 2)); genVs(b, i); }
   } else if (mode === 'battle') {
     L = clamp(L, 1, BATTLE_MAPS);
     b = new Builder(ctx, themeFor(TH[[2, 6, 1, 8][L - 1]], L), { arena: true });
@@ -835,6 +883,7 @@ export function buildLevel(mode, level, ctx) {
   const { b, L } = make(mode, level, ctx);
   const lv = b.build();
   lv.level = L;
+  lv.ice = !!b.ice; lv.laps = b.laps || 0; lv.boxes = b.boxes || [];
   if (mode === 'battle') {
     const R = ARENAS[L - 1].R;
     lv.finish.pos.y = -1e6;
@@ -850,8 +899,11 @@ export function buildLevel(mode, level, ctx) {
 // שם ואורך של מפה (ללובי)
 export function mapInfo(mode, level) {
   if (mode === 'battle') return { name: ARENAS[clamp(level, 1, BATTLE_MAPS) - 1].n, size: '' };
-  const L = clamp(level, 1, VS_MAPS);
-  return { name: `${TH[(L * 3 + 1) % TH.length].n} ${L}`, size: VS_SIZES[vsSize(L)] };
+  const [c, i] = vsSplit(level);
+  if (c === 1) return { name: `פיתולים ${i}`, size: 'ארוך' };
+  if (c === 2) return { name: `קרח ${i}`, size: 'חלקלק' };
+  if (c === 3) return { name: `קארט ${i}`, size: '3 הקפות' };
+  return { name: `${TH[(i * 3 + 1) % TH.length].n} ${i}`, size: VS_SIZES[vsSize(i)] };
 }
 
 // צורת המסלול מלמעלה, לציור תמונת התצוגה המקדימה

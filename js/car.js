@@ -47,7 +47,7 @@ export class CarPhysics {
       [P.wheelX, P.wheelZf, true], [-P.wheelX, P.wheelZf, true],
       [P.wheelX, P.wheelZr, false], [-P.wheelX, P.wheelZr, false],
     ].map(([x, z, front]) => ({ local: new CANNON.Vec3(x, P.mountY, z), front, len: RAY - 0.13, hit: false }));
-    this.steer = 0; this.spin = 0; this.boost = 100; this.regen = 9;
+    this.steer = 0; this.spin = 0; this.boost = 100; this.regen = 9; this.grip = 1;
     this.grounded = 0; this.airT = 0; this.jumpT = 1; this.jumped = false; this.airJumps = 1;
     this.boosting = false; this.flipT = 0; this.didJump = false; this.jumpBuf = 0; this.holdT = 0; this.supported = true;
   }
@@ -112,8 +112,8 @@ export class CarPhysics {
           const vfw = pv.dot(wf), vs = pv.dot(ws);
           // אחיזה צידית
           const drifting = inp.drift && !w.front;
-          let Fl = -vs * (P.mass / 4) * (drifting ? 5 : 32) * (1 - 0.85 * pivot);
-          const maxL = (drifting ? 0.55 : 2.4) * Math.max(Fs, P.mass * P.gravity * 0.15);
+          let Fl = -vs * (P.mass / 4) * (drifting ? 5 : 32) * (1 - 0.85 * pivot) * this.grip;
+          const maxL = (drifting ? 0.55 : 2.4) * Math.max(Fs, P.mass * P.gravity * 0.15) * this.grip;
           Fl = clamp(Fl, -maxL, maxL);
           // הנעה / בלימה
           let Fd;
@@ -122,7 +122,7 @@ export class CarPhysics {
               const lim = th > 0 ? (this.boosting ? P.boostSpeed : P.maxSpeed) : P.reverse;
               const a = Math.abs(vfw);
               Fd = th * P.engine * (a < lim * 0.75 ? 1 : Math.max(0, (lim - a) / (lim * 0.25)));
-            } else Fd = th * P.brake;
+            } else Fd = th * P.brake * (0.4 + 0.6 * this.grip);
           } else Fd = Math.abs(vfw) < 3 ? clamp(-vfw * 20, -25, 25) : -vfw * 0.5; // בלי גז ובמהירות נמוכה – בלם חניה, כדי שלא ייגרר
           if (locked) Fd = -vfw * 8;
           if (!this.boosting && Math.abs(vfw) > P.maxSpeed + 1) Fd -= Math.sign(vfw) * 5;

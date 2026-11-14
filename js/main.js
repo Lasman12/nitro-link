@@ -6,7 +6,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { CarPhysics, CarVisual, carShape, addForce, P as CP, DEFAULT_SKIN, SKIN_OPTS, G_CAR, G_REMOTE } from './car.js';
-import { buildLevel, CHAIN_LEN, RACE_LEVELS, CHAIN_LEVELS, VS_MAPS, BATTLE_MAPS, mapInfo, trackShape } from './level.js';
+import { buildLevel, CHAIN_LEN, RACE_LEVELS, CHAIN_LEVELS, VS_MAPS, BATTLE_MAPS, VS_CATS, vsSplit, mapInfo, trackShape } from './level.js';
 import { WRAPS, GRADS, FEATHERS, ROAD, SHOP, SOURCE, itemName, itemSwatch } from './items.js';
 import { Account, rankOf, AuthError } from './account.js';
 import { Sky, Particles, ChainVisual, tex } from './fx.js';
@@ -210,7 +210,7 @@ const ATT = new CANNON.Vec3(0, 0.3, 0), cr = new CANNON.Vec3(), cv = new CANNON.
 const hud = {
   timer: $('#timer'), rank: $('#rank'), board: $('#board'), ring: $('#ring'), spd: $('#spd'),
   chain: $('#chainHud'), height: $('#height'), tension: $('#tension'), msg: $('#msg'), count: $('#countdown'),
-  nitro: $('#nitro'), nitroFill: $('#nitroFill'), battle: $('#battleHud'), info: $('#info'),
+  nitro: $('#nitro'), nitroFill: $('#nitroFill'), battle: $('#battleHud'), info: $('#info'), item: $('#item'),
 };
 let msgTimer = 0;
 function showMsg(text, ms = 1600) {
@@ -218,6 +218,25 @@ function showMsg(text, ms = 1600) {
   hud.msg.classList.add('show');
   clearTimeout(msgTimer);
   msgTimer = setTimeout(() => hud.msg.classList.remove('show'), ms);
+}
+
+// תיבות הפתעה וחפצים
+const ITEMS = [null, { n: '🚀 טורבו', use: 'טורבו!' }, { n: '🛡️ מגן', use: 'מגן פעיל' }, { n: '💥 גל הדף', use: 'גל הדף!' }, { n: '🛢️ כתם שמן', use: 'שמן על המסלול' }, { n: '⚡ ברק', use: 'ברק!' }];
+const boxGeo = new THREE.BoxGeometry(1.7, 1.7, 1.7);
+let boxTex = null;
+function boxMat() {
+  if (!boxTex) {
+    const c = document.createElement('canvas');
+    c.width = c.height = 128;
+    const g = c.getContext('2d'), gr = g.createLinearGradient(0, 0, 128, 128);
+    gr.addColorStop(0, '#ff5ad1'); gr.addColorStop(0.5, '#ffd21a'); gr.addColorStop(1, '#19d3ff');
+    g.fillStyle = gr; g.fillRect(0, 0, 128, 128);
+    g.strokeStyle = '#fff'; g.lineWidth = 8; g.strokeRect(4, 4, 120, 120);
+    g.fillStyle = '#fff'; g.font = '900 92px Arial'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('?', 64, 70);
+    boxTex = new THREE.CanvasTexture(c);
+    boxTex.colorSpace = THREE.SRGBColorSpace;
+  }
+  return new THREE.MeshBasicMaterial({ map: boxTex, color: new THREE.Color(1.5, 1.5, 1.5), transparent: true, opacity: 0.92 });
 }
 
 class Game {
@@ -292,6 +311,19 @@ class Game {
         sfx.hit();
       });
     }
+    // קרח, הקפות ותיבות הפתעה
+    this.car.grip = this.level.ice ? 0.3 : 1;
+    this.laps = this.level.laps; this.lap = 0; this.item = 0; this.shieldT = 0; this.slipT = 0; this.oils = [];
+    this.boxes = this.level.boxes.map((pos) => {
+      const m = new THREE.Mesh(boxGeo, boxMat());
+      m.position.copy(pos);
+      scene.add(m);
+      return { pos, mesh: m, cd: 0 };
+    });
+    this.shield = new THREE.Mesh(new THREE.SphereGeometry(2.6, 20, 14), new THREE.MeshBasicMaterial({ color: new THREE.Color(0x3dd6ff).multiplyScalar(1.6), transparent: true, opacity: 0.22, depthWrite: false }));
+    this.shield.visible = false;
+    scene.add(this.shield);
+    hud.item.classList.add('hidden');
     this.syncPlayers();
     this.respawn();
     hud.battle.classList.toggle('hidden', !this.battle);
@@ -355,9 +387,92 @@ class Game {
 
   onEvent(m) {
     if (m.k === 'rs' && this.mode === 'chain') this.teamRespawn(false);
+    if (m.k === 'it') this.onItem(m);
     if (m.k === 'ko' && this.battle) {
       const who = this.remotes.get(m.from)?.name || 'שחקן';
       if (m.by === net.myId) { this.kos++; sfx.ko(); showMsg(`העפת את ${who}!`, 2000); } else showMsg(`${who} נפל מהזירה`, 1400);
+    }
+  }
+
+  // ----- חפצים מתיבות ההפתעה -----
+  addOil(x, y, z, mine) {
+    const mesh = new THREE.Mesh(new THREE.CircleGeometry(2.6, 20).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0x0a0a12, transparent: true, opacity: 0.85 }));
+    mesh.position.set(x, y + 0.06, z);
+    this.scene.add(mesh);
+    this.oils.push({ mesh, t: 14, safe: mine ? 1.2 : 0 });
+  }
+  useItem() {
+    const it = this.item, b = this.car.body, p = b.position;
+    if (!it || this.fin || this.gone) return;
+    this.item = 0;
+    hud.item.classList.add('hidden');
+    sfx.pad();
+    if (it === 1) { // טורבו
+      const f = _v.set(0, 0, 1).applyQuaternion(_q.copy(b.quaternion));
+      this.car.boost = 100;
+      b.velocity.x += f.x * 16; b.velocity.z += f.z * 16;
+    } else if (it === 2) this.shieldT = 7;
+    else if (it === 3) net.sendEvent({ k: 'it', it, p: [p.x, p.y, p.z] });
+    else if (it === 4) {
+      const f = _v.set(0, 0, -3.5).applyQuaternion(_q.copy(b.quaternion));
+      const o = [Math.round((p.x + f.x) * 10) / 10, Math.round((p.y - 0.75) * 10) / 10, Math.round((p.z + f.z) * 10) / 10];
+      this.addOil(o[0], o[1], o[2], true);
+      net.sendEvent({ k: 'it', it, p: o });
+    } else if (it === 5) net.sendEvent({ k: 'it', it });
+    showMsg(ITEMS[it].use, 1200);
+  }
+  onItem(m) {
+    const b = this.car.body, who = this.remotes.get(m.from)?.name || 'שחקן';
+    if (m.it === 4 && Array.isArray(m.p)) { this.addOil(+m.p[0] || 0, +m.p[1] || 0, +m.p[2] || 0, false); return; }
+    if (this.gone || this.fin) return;
+    if (this.shieldT > 0) { if (m.it === 5) showMsg('המגן חסם את הברק!', 1200); return; }
+    if (m.it === 3 && Array.isArray(m.p)) {
+      const dx = b.position.x - m.p[0], dz = b.position.z - m.p[2], d = Math.hypot(dx, dz);
+      if (d > 18 || Math.abs(b.position.y - m.p[1]) > 6) return;
+      const k = 22 * (1 - d / 24) / (d || 1);
+      b.velocity.x += dx * k; b.velocity.z += dz * k; b.velocity.y += 6;
+      sfx.hit(); showMsg(`גל הדף מ${who}!`, 1200);
+    } else if (m.it === 5) {
+      b.velocity.x *= 0.4; b.velocity.z *= 0.4; b.angularVelocity.y += 6;
+      sfx.hit(); showMsg(`${who} הפעיל ברק!`, 1400);
+    }
+  }
+  updateItems(dt, inp) {
+    const p = this.phys, b = this.car.body, live = !this.gone && !this.fin;
+    for (const bx of this.boxes) {
+      bx.cd -= dt;
+      bx.mesh.visible = bx.cd <= 0;
+      bx.mesh.rotation.y += dt * 1.6; bx.mesh.rotation.x += dt * 0.9;
+      if (bx.cd <= 0 && live && Math.hypot(p.x - bx.pos.x, p.z - bx.pos.z) < 2.6 && Math.abs(p.y - bx.pos.y) < 3) {
+        bx.cd = 5;
+        if (!this.item) {
+          // מי שמוביל מקבל פחות חפצים חזקים
+          const lead = this.standings()[0]?.me, r = Math.random();
+          this.item = lead ? (r < 0.4 ? 1 : r < 0.7 ? 2 : 4) : r < 0.3 ? 1 : r < 0.48 ? 2 : r < 0.68 ? 3 : r < 0.86 ? 4 : 5;
+          hud.item.innerHTML = `${ITEMS[this.item].n}<small>${isTouch ? 'הקישו לשימוש' : 'F / LB'}</small>`;
+          hud.item.classList.remove('hidden');
+          sfx.coin();
+        }
+      }
+    }
+    if (input.item && live) this.useItem();
+    this.shieldT -= dt;
+    this.slipT -= dt;
+    this.car.grip = this.slipT > 0 ? 0.04 : this.level.ice ? 0.3 : 1;
+    this.shield.visible = this.shieldT > 0 && !this.gone;
+    if (this.shield.visible) this.shield.position.copy(this.pos);
+    for (let i = this.oils.length - 1; i >= 0; i--) {
+      const o = this.oils[i];
+      o.t -= dt; o.safe -= dt;
+      let hit = false;
+      if (live && o.safe <= 0 && this.shieldT <= 0 && this.car.supported && Math.hypot(p.x - o.mesh.position.x, p.z - o.mesh.position.z) < 2.9 && Math.abs(p.y - o.mesh.position.y) < 1.8) {
+        hit = true;
+        b.angularVelocity.y += (Math.random() > 0.5 ? 1 : -1) * 12;
+        b.velocity.x *= 0.6; b.velocity.z *= 0.6;
+        this.slipT = 1.3; // בלי אחיזה לרגע – המכונית מסתחררת
+        sfx.fall(); showMsg('החלקת על שמן!', 1200);
+      }
+      if (hit || o.t <= 0) { o.mesh.geometry.dispose(); o.mesh.material.dispose(); o.mesh.removeFromParent(); this.oils.splice(i, 1); }
     }
   }
 
@@ -436,7 +551,7 @@ class Game {
     const cps = this.level.cps, cur = cps[this.cp].pos;
     const next = this.cp + 1 < cps.length ? cps[this.cp + 1].pos : this.level.finish.pos;
     const total = cur.distanceTo(next) || 1;
-    return this.cp * 1000 + (clamp(total - this.phys.distanceTo(next), 0, total) / total) * 999;
+    return this.lap * 100000 + this.cp * 1000 + (clamp(total - this.phys.distanceTo(next), 0, total) / total) * 999;
   }
 
   standings() {
@@ -498,7 +613,14 @@ class Game {
       if (level.inZone(level.cps[i], p)) { this.cp = i; sfx.checkpoint(); showMsg('נקודת ביקורת!'); break; }
     }
     if (this.mode === 'chain') for (const r of this.remotes.values()) if (r.cp > this.cp) { this.cp = r.cp; showMsg('נקודת ביקורת!'); }
-    if (!this.fin && !locked && level.inZone(level.finish, p)) {
+    if (this.laps && !this.fin && !locked && level.inZone(level.finish, p)) {
+      // מסלול הקפות: חציית הקו נספרת רק אחרי שעברו את כל נקודות הביקורת
+      if (this.cp === level.cps.length - 1) {
+        this.lap++; this.cp = 0;
+        if (this.lap < this.laps) { sfx.checkpoint(); showMsg(this.lap === this.laps - 1 ? 'הקפה אחרונה!' : `הקפה ${this.lap + 1} מתוך ${this.laps}`, 1800); }
+      }
+    }
+    if (!this.fin && !locked && (this.laps ? this.lap >= this.laps : level.inZone(level.finish, p))) {
       this.fin = Math.max(1, Math.round(tRace * 1000));
       sfx.finish();
       if (this.mode === 'race') {
@@ -559,6 +681,7 @@ class Game {
       c.vis.update(a || _v, b || _v2, !!(a && b) && _v.distanceTo(_v2) < CHAIN_LEN * 2.5);
     }
 
+    this.updateItems(dt, inp);
     level.update(dt, this.cp);
     this.updateCamera(dt);
     this.sun.position.set(this.focus.x + 12, this.focus.y + 90, this.focus.z - 45);
@@ -631,6 +754,7 @@ class Game {
       const st = this.standings();
       const sr = this.spec != null ? this.remotes.get(this.spec) : null;
       hud.info.textContent = sr ? `👁 צופה ב־${sr.name}${this.remotes.size > 1 ? ' · רווח / A להחלפה' : ''}`
+        : this.laps && !this.fin ? `הקפה ${Math.min(this.laps, this.lap + 1)} / ${this.laps}${this.endIn !== null && !this.over ? ` · נגמר בעוד ${Math.max(0, Math.ceil(this.endIn))} שנ'` : ''}`
         : this.mode === 'vs' && this.endIn !== null && !this.fin && !this.over ? `המירוץ נגמר בעוד ${Math.max(0, Math.ceil(this.endIn))} שנ'` : '';
       if (this.battle) {
         hud.battle.innerHTML = `<b>${'❤'.repeat(Math.max(0, this.lives))}<s>${'❤'.repeat(3 - Math.max(0, this.lives))}</s></b><small>הפלות: ${this.kos}</small>`;
@@ -652,6 +776,10 @@ class Game {
     this.sun.shadow.map?.dispose();
     sfx.engine(0, 0, false, false);
     sfx.musicStop();
+    for (const bx of this.boxes) bx.mesh.material.dispose();
+    for (const o of this.oils) { o.mesh.geometry.dispose(); o.mesh.material.dispose(); }
+    this.shield.geometry.dispose(); this.shield.material.dispose();
+    hud.item.classList.add('hidden');
   }
 }
 
@@ -924,10 +1052,13 @@ function renderLobby() {
   if (maps) {
     const info = mapInfo(mode, sel);
     $('#levelsTitle').textContent = `${mode === 'battle' ? 'זירה' : 'מפה'}: ${info.name}${info.size ? ' · ' + info.size : ''}`;
-    for (let i = 1; i <= maxLevel(mode); i++) {
-      const inf = mapInfo(mode, i);
-      if (mode === 'vs' && i % 10 === 1) html += `<h4>מסלולים ${['קצרים', 'בינוניים', 'ארוכים'][(i - 1) / 10]}</h4>`;
-      html += `<button class="map${i === sel ? ' on' : ''}" data-l="${i}" ${net.isHost ? '' : 'disabled'}><img src="${preview(mode, i)}" alt=""><b>${esc(inf.name)}</b></button>`;
+    // מירוץ חברים: לשוניות של תת-קטגוריות, ובכל אחת המפות שלה
+    const [cat] = mode === 'vs' ? vsSplit(sel) : [0], base = cat * 100, count = mode === 'vs' ? VS_CATS[cat].count : maxLevel(mode);
+    if (mode === 'vs') html += '<div class="tabs">' + VS_CATS.map((c, k) => `<button class="tab${k === cat ? ' on' : ''}" data-cat="${k}" ${net.isHost ? '' : 'disabled'}>${c.n}</button>`).join('') + '</div>';
+    for (let i = 1; i <= count; i++) {
+      const inf = mapInfo(mode, base + i);
+      if (mode === 'vs' && cat === 0 && i % 10 === 1) html += `<h4>מסלולים ${['קצרים', 'בינוניים', 'ארוכים'][(i - 1) / 10]}</h4>`;
+      html += `<button class="map${base + i === sel ? ' on' : ''}" data-l="${base + i}" ${net.isHost ? '' : 'disabled'}><img src="${preview(mode, base + i)}" alt=""><b>${esc(inf.name)}</b></button>`;
     }
   } else for (let i = 1; i <= maxLevel(mode); i++) {
     const lock = i > open;
@@ -935,6 +1066,7 @@ function renderLobby() {
   }
   $('#levels').className = maps ? 'maps' : '';
   $('#levels').innerHTML = html;
+  $('#levels').querySelectorAll('.tab').forEach((b) => (b.onclick = () => { lobbyLevel.vs = Number(b.dataset.cat) * 100 + 1; net.syncLobby(); }));
   $('#levels').querySelectorAll('.lv, .map').forEach((b) => (b.onclick = () => { lobbyLevel[lobbyMode] = Number(b.dataset.l); net.syncLobby(); }));
   if (renderLobby.last !== mode + sel) { renderLobby.last = mode + sel; $('#levels').querySelector('.on')?.scrollIntoView({ block: 'nearest' }); }
 }
@@ -1107,6 +1239,7 @@ $('#btnRoadBack').onclick = () => show('menu');
 $('#btnShopBack').onclick = () => show('menu');
 $('#btnSound').onclick = () => { settings.sound = !settings.sound; store.set('sound', settings.sound); sfx.setEnabled(settings.sound); setPause(true); };
 $('#tMenu').onclick = () => setPause(true);
+$('#item').onclick = () => input.pressed.add('TouchItem');
 addEventListener('keydown', (e) => {
   if (e.code === 'Escape' && game) setPause($('#pause').classList.contains('hidden'));
   if (e.code === 'KeyM' && game && e.target.tagName !== 'INPUT') { settings.sound = !settings.sound; sfx.setEnabled(settings.sound); }

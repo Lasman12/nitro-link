@@ -6,8 +6,8 @@ export class Input {
     this.touch = { steer: 0, gas: false, brake: false, boost: false, jump: false };
     this.enabled = true;
     this.state = { throttle: 0, steer: 0, jump: false, jumpHeld: false, boost: false, drift: false, pitch: 0, roll: 0, respawn: false };
-    this.padJump = false;
-    this.padRespawn = false;
+    this.padPrev = {};
+    this.menu = false;
 
     const typing = (e) => e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA');
     addEventListener('keydown', (e) => {
@@ -74,26 +74,34 @@ export class Input {
     if (t.steer) s.steer = t.steer;
     if (t.boost) s.boost = true;
 
-    const gp = navigator.getGamepads ? navigator.getGamepads()[0] : null;
+    // שלט: מקל שמאלי / חיצים – היגוי · RT – גז · LT – ברקס/רוורס · A – קפיצה · B או RB – ניטרו
+    //       X – דריפט · Y – חזרה לנקודת ביקורת · Start – תפריט
+    const gp = this.pad();
+    this.menu = false;
     if (gp) {
+      const b = (i) => !!gp.buttons[i]?.pressed, v = (i) => gp.buttons[i]?.value || 0;
       const ax = gp.axes[0] || 0;
-      if (Math.abs(ax) > 0.15) s.steer = -ax;
-      const rt = gp.buttons[7]?.value || 0, lt = gp.buttons[6]?.value || 0;
-      if (rt > 0.1 || lt > 0.1) s.throttle = rt - lt;
-      if (gp.buttons[1]?.pressed) s.boost = true;
-      if (gp.buttons[2]?.pressed) s.drift = true;
-      const ay = gp.axes[1] || 0;
-      if (Math.abs(ay) > 0.3) s.pitch = -ay;
-      const j = !!gp.buttons[0]?.pressed;
-      if (j) s.jumpHeld = true;
-      if (j && !this.padJump) s.jump = true;
-      this.padJump = j;
-      const r = !!gp.buttons[3]?.pressed;
-      if (r && !this.padRespawn) s.respawn = true;
-      this.padRespawn = r;
+      if (Math.abs(ax) > 0.18) s.steer = -Math.sign(ax) * Math.min(1, (Math.abs(ax) - 0.18) / 0.7);
+      if (b(14)) s.steer = 1; else if (b(15)) s.steer = -1;
+      const rt = v(7), lt = v(6);
+      if (rt > 0.08 || lt > 0.08) s.throttle = rt - lt;
+      if (b(1) || b(5)) s.boost = true;
+      if (b(2)) s.drift = true;
+      const edge = (name, on) => { const hit = on && !this.padPrev[name]; this.padPrev[name] = on; return hit; };
+      if (b(0)) s.jumpHeld = true;
+      if (edge('jump', b(0))) s.jump = true;
+      if (edge('respawn', b(3))) s.respawn = true;
+      if (edge('menu', b(9))) this.menu = true;
     }
     if (!this.enabled) { s.throttle = 0; s.steer = 0; s.jump = false; s.jumpHeld = false; s.boost = false; s.drift = false; s.pitch = 0; s.roll = 0; s.respawn = false; }
     return s;
+  }
+
+  // השלט הראשון שמחובר (לא תמיד במקום 0)
+  pad() {
+    if (!navigator.getGamepads) return null;
+    for (const g of navigator.getGamepads()) if (g && g.connected && g.buttons.length >= 10) return g;
+    return null;
   }
 
   endFrame() { this.pressed.clear(); }

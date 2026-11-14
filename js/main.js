@@ -890,6 +890,9 @@ addEventListener('keydown', (e) => {
   if (e.code === 'KeyM' && game && e.target.tagName !== 'INPUT') { settings.sound = !settings.sound; sfx.setEnabled(settings.sound); }
 });
 
+addEventListener('gamepadconnected', () => toast('שלט מחובר: מקל – היגוי · RT – גז · LT – ברקס · A – קפיצה · B – ניטרו', 6000));
+addEventListener('gamepaddisconnected', () => toast('השלט התנתק'));
+
 // אירועי רשת
 net.getInfo = () => ({ mode: lobbyMode, level: lobbyLevel[lobbyMode], game: currentGame });
 net.on('players', (m) => {
@@ -924,6 +927,8 @@ function loop(now) {
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
   if (game) { game.frame(dt); render(game.scene); } else { showroom.update(dt); render(showroom.scene); }
+  if (!game) input.read(); // כדי שכפתור התפריט בשלט יעבוד גם כשהקלט מושבת
+  if (input.menu && game) setPause($('#pause').classList.contains('hidden'));
   input.endFrame();
 }
 requestAnimationFrame(loop);

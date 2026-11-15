@@ -1,7 +1,7 @@
 // מכונית: פיזיקה ארקיידית (מתלים בקרני-ריי, קפיצה, בוסט, שליטה באוויר) + מודל תלת-ממדי להתאמה אישית
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
-import { GRADS, FEATHERS } from './items.js?v=1794770732';
+import { GRADS, FEATHERS } from './items.js?v=1794772911';
 
 export const G_WORLD = 1, G_CAR = 2, G_KIN = 4, G_REMOTE = 8;
 

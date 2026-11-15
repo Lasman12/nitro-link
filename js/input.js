@@ -3,7 +3,8 @@ export class Input {
   constructor() {
     this.keys = new Set();
     this.pressed = new Set();
-    this.touch = { steer: 0, gas: false, brake: false, boost: false, jump: false };
+    this.touch = { steer: 0, throttle: 0, boost: false, jump: false };
+    this.touchMenu = false;
     this.enabled = true;
     this.state = { throttle: 0, steer: 0, jump: false, jumpHeld: false, boost: false, drift: false, pitch: 0, roll: 0, respawn: false };
     this.padPrev = {};
@@ -22,36 +23,48 @@ export class Input {
     this.setupTouch();
   }
 
+  // מגע: ג'ויסטיק אחד (למעלה = גז, למטה = רוורס, צדדים = היגוי), כפתור בוסט מעליו, וכפתור קפיצה בצד השני.
+  // לחיצה ארוכה על הקפיצה פותחת את התפריט.
   setupTouch() {
     const stick = document.getElementById('stick');
     if (!stick) return;
-    const knob = stick.querySelector('i');
+    const knob = stick.querySelector('i'), t = this.touch;
     let id = null;
     const move = (e) => {
-      const r = stick.getBoundingClientRect();
-      let dx = (e.clientX - (r.left + r.width / 2)) / (r.width / 2);
-      dx = Math.max(-1, Math.min(1, dx));
-      this.touch.steer = -dx; // שמאלה = חיובי
-      knob.style.transform = `translateX(${dx * 44}px)`;
+      const r = stick.getBoundingClientRect(), R = r.width / 2;
+      let dx = (e.clientX - (r.left + R)) / R, dy = (e.clientY - (r.top + R)) / R;
+      const m = Math.hypot(dx, dy);
+      if (m > 1) { dx /= m; dy /= m; }
+      const dz = (v, d) => (Math.abs(v) < d ? 0 : Math.sign(v) * Math.min(1, (Math.abs(v) - d) / (0.8 - d)));
+      t.steer = -dz(dx, 0.16); // שמאלה = חיובי
+      t.throttle = -dz(dy, 0.22);
+      knob.style.transform = `translate(${dx * R * 0.6}px, ${dy * R * 0.6}px)`;
     };
-    stick.addEventListener('pointerdown', (e) => { id = e.pointerId; stick.setPointerCapture(id); move(e); });
+    stick.addEventListener('pointerdown', (e) => { e.preventDefault(); id = e.pointerId; stick.setPointerCapture(id); move(e); });
     stick.addEventListener('pointermove', (e) => { if (e.pointerId === id) move(e); });
-    const end = (e) => { if (e.pointerId === id) { id = null; this.touch.steer = 0; knob.style.transform = ''; } };
+    const end = (e) => { if (e.pointerId === id) { id = null; t.steer = 0; t.throttle = 0; knob.style.transform = ''; } };
     stick.addEventListener('pointerup', end);
     stick.addEventListener('pointercancel', end);
 
-    document.querySelectorAll('#tBtns .tb').forEach((b) => {
+    let holdTimer = 0;
+    document.querySelectorAll('#touch .tb').forEach((b) => {
       const k = b.dataset.k;
       const set = (v) => (e) => {
         e.preventDefault();
-        if (k === 'jump' && v) this.pressed.add('TouchJump');
-        this.touch[k] = v;
+        if (k === 'jump') {
+          clearTimeout(holdTimer);
+          if (v) {
+            this.pressed.add('TouchJump');
+            holdTimer = setTimeout(() => { this.touchMenu = true; t.jump = false; b.classList.remove('on'); }, 800);
+          }
+        }
+        t[k] = v;
         b.classList.toggle('on', v);
       };
-      b.addEventListener('pointerdown', set(true));
+      b.addEventListener('pointerdown', (e) => { b.setPointerCapture(e.pointerId); set(true)(e); });
       b.addEventListener('pointerup', set(false));
       b.addEventListener('pointercancel', set(false));
-      b.addEventListener('pointerleave', set(false));
+      b.addEventListener('contextmenu', (e) => e.preventDefault());
     });
   }
 
@@ -73,14 +86,13 @@ export class Input {
     this.next = this.pressed.has('Space') || this.pressed.has('TouchJump') || this.pressed.has('ArrowRight') || this.pressed.has('KeyD');
     s.jumpHeld = k.has('Space') || t.jump;
 
-    if (t.gas) s.throttle = 1;
-    if (t.brake) s.throttle = -1;
+    if (t.throttle) s.throttle = t.throttle;
     if (t.steer) s.steer = t.steer;
     if (t.boost) s.boost = true;
 
     // שלט: מקל שמאלי / חיצים – היגוי · RT – גז · LT – ברקס/רוורס · A – קפיצה · B או RB – ניטרו
     //       X – דריפט · Y – חזרה לנקודת ביקורת · Start – תפריט
-    this.menu = false;
+    this.menu = this.touchMenu; this.touchMenu = false;
     const edge = (name, on) => { const hit = on && !this.padPrev[name]; this.padPrev[name] = on; return hit; };
     // ממזגים את כל השלטים המחוברים (למשל שני Joy-Con נפרדים של נינטנדו)
     let px = 0, rt = 0, lt = 0, jump = false, resp = false, menu = false, any = false, itemBtn = false, hornBtn = false;

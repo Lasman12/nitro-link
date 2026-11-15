@@ -249,7 +249,7 @@ export class CarPhysics {
 // ---------- מראה המכונית ----------
 
 export const SKIN_OPTS = {
-  types: ['וייפר', 'טיטאן', 'להב'],
+  types: ['וייפר', 'טיטאן', 'להב', 'נקניקייה', 'בננה', 'ארגז קרטון', 'גבינה', 'ברווז ענק', 'אסלה', 'נעל'],
   finishes: ['מבריק', 'מטאלי', 'מט', 'כרום'],
   wheels: ['קלאסי', 'ניאון', 'חישורים', 'דיסק מלא', 'טבעות ניאון'],
   spoilers: ['ללא', 'כנף', 'כנף מירוץ', 'סנפיר'],
@@ -277,7 +277,75 @@ const TYPES = [
     width: 1.5, cabin: [[0.5, 0.08], [-0.1, 0.46], [-0.7, 0.48], [-1.3, 0.26]], cabW: 0.92, wheelR: 0.36,
     head: [-0.16, 2.02], tail: [0.42, -1.7], roof: [0.5, -0.4],
   },
+  // רכבי מם (נקנים בחנות): במקום מרכב רגיל נבנה מהם פסל קטן על גלגלים
+  { meme: 'hotdog', width: 1.6, wheelR: 0.37, tail: [0.62, -1.5], roof: [0.72, 0] },
+  { meme: 'banana', width: 1.5, wheelR: 0.37, tail: [0.95, -1.7], roof: [0.35, 0] },
+  { meme: 'box', width: 1.7, wheelR: 0.37, tail: [0.62, -1.6], roof: [0.62, 0] },
+  { meme: 'cheese', width: 1.6, wheelR: 0.37, tail: [1.0, -1.8], roof: [0.55, -0.4] },
+  { meme: 'duck', width: 1.7, wheelR: 0.4, tail: [0.75, -1.5], roof: [1.72, 0.9] },
+  { meme: 'toilet', width: 1.5, wheelR: 0.37, tail: [1.05, -1.25], roof: [1.05, -1.25] },
+  { meme: 'shoe', width: 1.5, wheelR: 0.37, tail: [1.15, -1.5], roof: [1.15, -1.1] },
 ];
+
+function buildMeme(kind, add, s, accent, dark) {
+  const mat = (color, o = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.55, metalness: 0.05, envMapIntensity: 0.6, ...o });
+  const black = mat(0x111111, { roughness: 0.3 });
+  const eyes = (y, z, dx = 0.3, r = 0.09) => { for (const sx of [-1, 1]) add(new THREE.SphereGeometry(r, 10, 8), black, sx * dx, y, z); };
+  if (kind === 'hotdog') {
+    const bun = mat(0xd9a55a), cap = (r, len) => new THREE.CapsuleGeometry(r, len, 6, 14).rotateX(Math.PI / 2);
+    for (const sx of [-1, 1]) add(cap(0.42, 2.7), bun, sx * 0.4, 0.02, 0);
+    add(cap(0.36, 3.3), mat(0xb5332a, { roughness: 0.35 }), 0, 0.34, 0);
+    const mustard = mat(0xffd21a, { roughness: 0.3 });
+    for (let i = 0; i < 9; i++) add(new THREE.BoxGeometry(0.34, 0.07, 0.12), mustard, 0, 0.71, -1.2 + i * 0.3).rotation.y = i % 2 ? 0.8 : -0.8;
+  } else if (kind === 'banana') {
+    const curve = new THREE.QuadraticBezierCurve3(new THREE.Vector3(0, 0.95, -2.1), new THREE.Vector3(0, -0.75, 0), new THREE.Vector3(0, 0.95, 2.1));
+    add(new THREE.TubeGeometry(curve, 24, 0.5, 10), mat(0xffe135, { roughness: 0.4 })).scale.x = 1.35;
+    const tip = mat(0x4a3210);
+    add(new THREE.ConeGeometry(0.2, 0.5, 8), tip, 0, 1.12, 2.22).rotation.x = 0.9;
+    add(new THREE.CylinderGeometry(0.12, 0.2, 0.5, 8), tip, 0, 1.12, -2.22).rotation.x = -0.9;
+    eyes(0.36, 1.55, 0.26);
+  } else if (kind === 'box') {
+    const card = mat(0xc49a6c, { roughness: 0.9 });
+    add(new THREE.BoxGeometry(1.7, 0.9, 3.7), card, 0, 0.15, 0);
+    for (const sx of [-1, 1]) add(new THREE.BoxGeometry(0.75, 0.04, 3.7), card, sx * 1.12, 0.78, 0).rotation.z = sx * 0.55;
+    add(new THREE.BoxGeometry(0.22, 0.02, 3.72), mat(0xe9dcb8), 0, 0.61, 0);
+    eyes(0.3, 1.86, 0.4, 0.13);
+    add(new THREE.BoxGeometry(0.6, 0.07, 0.04), black, 0, -0.02, 1.86);
+  } else if (kind === 'cheese') {
+    const ch = mat(0xffc83d, { roughness: 0.45 });
+    add(extrude([[-2, -0.3], [2, -0.3], [-2, 1.05]], 1.6, 0.05), ch);
+    const hole = mat(0xd98a1a);
+    for (const [z, y, r] of [[-1.3, 0.25, 0.26], [-0.3, 0.05, 0.2], [0.6, -0.08, 0.13], [-1.5, 0.7, 0.14], [-0.7, 0.42, 0.11]]) {
+      for (const sx of [-1, 1]) add(new THREE.CircleGeometry(r, 16).rotateY((sx * Math.PI) / 2), hole, sx * 0.81, y, z).castShadow = false;
+    }
+  } else if (kind === 'duck') {
+    const yel = mat(0xffd21a, { roughness: 0.3 });
+    add(new THREE.SphereGeometry(1, 20, 14), yel, 0, 0.3, -0.2).scale.set(0.95, 0.72, 1.75);
+    add(new THREE.SphereGeometry(0.6, 18, 12), yel, 0, 1.12, 0.9);
+    add(new THREE.ConeGeometry(0.42, 0.9, 10), yel, 0, 0.75, -1.85).rotation.x = -0.9;
+    add(new THREE.ConeGeometry(0.24, 0.5, 10).rotateX(Math.PI / 2), mat(0xff7a1a), 0, 1.02, 1.6).scale.set(1.5, 0.6, 1);
+    eyes(1.3, 1.36, 0.25, 0.08);
+  } else if (kind === 'toilet') {
+    const white = mat(0xf4f6fa, { roughness: 0.2 });
+    add(new THREE.BoxGeometry(1.3, 0.3, 3.5), white, 0, -0.18, 0);
+    add(new THREE.CylinderGeometry(0.78, 0.5, 0.8, 18), white, 0, 0.35, 0.55);
+    add(new THREE.TorusGeometry(0.62, 0.12, 8, 22).rotateX(Math.PI / 2), white, 0, 0.78, 0.55);
+    add(new THREE.CircleGeometry(0.55, 18).rotateX(-Math.PI / 2), mat(0x4fb8ff, { roughness: 0.1 }), 0, 0.7, 0.55).castShadow = false;
+    add(new THREE.BoxGeometry(1.35, 1.05, 0.6), white, 0, 0.5, -1.25);
+    add(new THREE.BoxGeometry(1.45, 0.1, 0.7), white, 0, 1.05, -1.25);
+    add(new THREE.BoxGeometry(0.22, 0.06, 0.06), mat(0xb8c2d0, { metalness: 0.9, roughness: 0.3 }), 0.5, 0.85, -0.93);
+  } else if (kind === 'shoe') {
+    const col = mat(s.color, { roughness: 0.6 }), white = mat(0xf2f2f2);
+    add(new THREE.BoxGeometry(1.55, 0.22, 4), white, 0, -0.22, 0);
+    add(new THREE.CapsuleGeometry(0.68, 1.5, 6, 14).rotateX(Math.PI / 2), col, 0, 0.2, 0.7).scale.set(1.08, 0.72, 1);
+    add(new THREE.BoxGeometry(1.45, 1.25, 1.5), col, 0, 0.52, -1.1);
+    add(new THREE.TorusGeometry(0.55, 0.1, 8, 18).rotateX(Math.PI / 2), white, 0, 1.16, -1.1);
+    for (let i = 0; i < 4; i++) add(new THREE.BoxGeometry(0.9, 0.05, 0.08), white, 0, 0.7 - i * 0.03, -0.2 + i * 0.36);
+  }
+  // פנס אחורי קטן, כדי שיהיה ברור לאן הרכב נוסע
+  add(new THREE.BoxGeometry(0.9, 0.07, 0.06), new THREE.MeshBasicMaterial({ color: hdr(0xff1a2e, 2.2) }), 0, -0.22, -2.02);
+  add(new THREE.BoxGeometry(1.2, 0.1, 3.4), dark, 0, -0.36, 0);
+}
 
 function extrude(pts, width, bevel) {
   const shape = new THREE.Shape();
@@ -418,6 +486,7 @@ export class CarVisual {
     const glass = new THREE.MeshPhysicalMaterial({ color: 0x08121e, metalness: 0.8, roughness: 0.3, envMapIntensity: 0.8 });
     const W = T.width;
 
+    if (T.meme) buildMeme(T.meme, add, s, accent, dark); else {
     const bodyGeo = extrude(T.body, W, 0.07);
     if (fancy) projectUV(bodyGeo, W);
     add(bodyGeo, bodyPaint);
@@ -433,6 +502,7 @@ export class CarVisual {
     // כנפיים מעל הגלגלים
     for (const [x, z] of [[P.wheelX, P.wheelZf], [-P.wheelX, P.wheelZf], [P.wheelX, P.wheelZr], [-P.wheelX, P.wheelZr]]) {
       add(new THREE.BoxGeometry(0.36, 0.07, 0.95), paint, x, -0.32 + T.wheelR + 0.07, z);
+    }
     }
 
     // גלגלים

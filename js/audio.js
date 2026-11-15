@@ -76,6 +76,12 @@ export class Sfx {
   checkpoint() { this.blip(660, 0.12, 'square', 0.15); setTimeout(() => this.blip(990, 0.2, 'square', 0.15), 110); }
   beep(hi) { this.blip(hi ? 880 : 440, hi ? 0.5 : 0.18, 'square', 0.2); }
   finish() { [523, 659, 784, 1046].forEach((f, i) => setTimeout(() => this.blip(f, 0.25, 'square', 0.18), i * 130)); }
+  horn(i = 1) {
+    if (i === 2) { this.blip(150, 0.7, 'sawtooth', 0.28); this.blip(190, 0.7, 'sawtooth', 0.22); }
+    else if (i === 3) [523, 659, 784, 659, 1046].forEach((f, k) => setTimeout(() => this.blip(f, 0.13, 'square', 0.18), k * 110));
+    else if (i === 4) this.blip(1500, 0.45, 'sawtooth', 0.2, -1300);
+    else if (i === 1) { this.blip(440, 0.38, 'square', 0.16); this.blip(554, 0.38, 'square', 0.16); }
+  }
   hit() { this.blip(140, 0.22, 'sawtooth', 0.3, -90); this.blip(900, 0.06, 'square', 0.12); }
   ko() { [392, 523, 784].forEach((f, i) => setTimeout(() => this.blip(f, 0.16, 'square', 0.16), i * 80)); }
   coin() { this.blip(1320, 0.09, 'square', 0.12); setTimeout(() => this.blip(1760, 0.2, 'square', 0.12), 80); }

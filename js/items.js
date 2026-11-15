@@ -19,14 +19,16 @@ export const FEATHERS = [
   { n: 'זהב', c: ['#ffd86b', '#ffb41a'] },
   { n: 'עורב', c: ['#20242e', '#3a3f55'] },
 ];
-export const KIND_NAME = { wrap: 'טפט', grad: 'גרדיאנט', feather: 'נוצות', topper: 'קישוט גג' };
-const TOPPER_NAMES = { 5: 'הילה', 6: 'ברווז גומי' };
+export const TRAILS = ['רגיל', 'קשת', 'ניצוצות זהב', 'קרח'];
+export const HORNS = ['ללא', 'קלאסי', 'משאית', 'מנגינה', 'לייזר'];
+export const KIND_NAME = { wrap: 'טפט', grad: 'גרדיאנט', feather: 'נוצות', topper: 'קישוט גג', wheel: 'גלגלים', tfx: 'שובל', horn: 'צופר' };
+const TOPPER_NAMES = { 5: 'הילה', 6: 'ברווז גומי' }, WHEEL_NAMES = { 3: 'דיסק מלא', 4: 'טבעות ניאון' };
 
 export function itemName(id) {
   const m = /^([a-z]+)(\d+)$/.exec(id);
   if (!m) return id;
   const k = m[1], i = Number(m[2]);
-  const n = k === 'wrap' ? WRAPS[i] : k === 'grad' ? GRADS[i]?.n : k === 'feather' ? FEATHERS[i]?.n : TOPPER_NAMES[i];
+  const n = k === 'wrap' ? WRAPS[i] : k === 'grad' ? GRADS[i]?.n : k === 'feather' ? FEATHERS[i]?.n : k === 'wheel' ? WHEEL_NAMES[i] : k === 'tfx' ? TRAILS[i] : k === 'horn' ? HORNS[i] : TOPPER_NAMES[i];
   return `${KIND_NAME[k]}: ${n}`;
 }
 
@@ -43,6 +45,9 @@ export const SHOP = [
   { item: 'grad4', price: 200 }, { item: 'grad5', price: 300 }, { item: 'grad6', price: 400 },
   { item: 'feather3', price: 450 }, { item: 'feather6', price: 350 },
   { item: 'topper5', price: 250 }, { item: 'topper6', price: 400 },
+  { item: 'wheel3', price: 200 }, { item: 'wheel4', price: 300 },
+  { item: 'tfx3', price: 250 }, { item: 'tfx2', price: 300 }, { item: 'tfx1', price: 400 },
+  { item: 'horn2', price: 150 }, { item: 'horn4', price: 200 }, { item: 'horn3', price: 300 },
 ];
 // מאיפה משיגים כל פריט נעול
 export const SOURCE = {};
@@ -54,6 +59,9 @@ export function itemSwatch(id) {
   const m = /^([a-z]+)(\d+)$/.exec(id), i = Number(m[2]);
   if (m[1] === 'grad') return `linear-gradient(90deg, ${GRADS[i].b}, ${GRADS[i].a})`;
   if (m[1] === 'feather') return `linear-gradient(90deg, ${FEATHERS[i].c.join(', ')})`;
+  if (m[1] === 'tfx') return ['', 'linear-gradient(90deg, red, orange, yellow, lime, cyan, blue, violet)', 'radial-gradient(circle, #fff, #ffc21a)', 'linear-gradient(135deg, #fff, #38b6ff)'][i];
+  if (m[1] === 'horn') return 'radial-gradient(circle, #ff5a1f 30%, #2a1a10 32%)';
+  if (m[1] === 'wheel') return 'radial-gradient(circle, #e8eefc 35%, #111 37% 62%, #19d3ff 64%)';
   if (m[1] === 'wrap') return 'repeating-linear-gradient(135deg, #ff7a1a 0 6px, #1e2a55 6px 12px)';
   return 'linear-gradient(135deg, #ffd86b, #ff9a2e)';
 }

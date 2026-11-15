@@ -89,7 +89,11 @@
     <h2>טבלת שיאים</h2>
     <div class="tabs">
       <button class="tab on" data-tab="race">מסלול יחיד</button>
-      <button class="tab" data-tab="chain">מסלול לשניים (שרשרת)</button>
+      <button class="tab" data-tab="chain">שרשרת</button>
+      <button class="tab" data-tab="tr">גביעים</button>
+      <button class="tab" data-tab="time">זמן לשלב</button>
+    </div>
+    <div id="lbLevelRow" class="hidden"><label for="lbLevel">שלב</label><select id="lbLevel"></select>
     </div>
     <ol id="lbList"></ol>
     <p id="lbNote" class="tag"></p>
@@ -185,8 +189,9 @@
   <div id="nitro"><b>NITRO</b><div class="nbar"><i id="nitroFill"></i></div></div>
   <div id="battleHud" class="hidden"></div>
   <button id="item" class="hidden"></button>
+  <div id="emotes"><button data-e="0">👍</button><button data-e="1">😂</button><button data-e="2">😱</button><button data-e="3">🔥</button><button data-e="4">👋</button></div>
   <div id="msg"></div>
-  <div id="hint">WASD / חצים (אחורה רק S) – נהיגה והיגוי באוויר · רווח – קפיצה (החזקה = גבוה יותר, פעמיים באוויר) · Shift – בוסט · X – דריפט · Q/E – גלגול · I/K – הטיה · חץ מטה – שימוש בחפץ · R – חזרה לנקודת ביקורת · Esc – תפריט<br>שלט: מקל / חיצים – היגוי · RT – גז · LT – ברקס · A – קפיצה · B – ניטרו · X – דריפט · LB – חפץ · Y – נקודת ביקורת · Start – תפריט</div>
+  <div id="hint">WASD / חצים (אחורה רק S) – נהיגה והיגוי באוויר · רווח – קפיצה (החזקה = גבוה יותר, פעמיים באוויר) · Shift – בוסט · X – דריפט · Q/E – גלגול · I/K – הטיה · חץ מטה – שימוש בחפץ · H – צופר · 1–5 – אימוג'י · R – חזרה לנקודת ביקורת · Esc – תפריט<br>שלט: מקל / חיצים – היגוי · RT – גז · LT – ברקס · A – קפיצה · B – ניטרו · X – דריפט · LB – חפץ · Y – נקודת ביקורת · Start – תפריט</div>
 </div>
 <div id="countdown" class="hidden"></div>
 

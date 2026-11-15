@@ -68,6 +68,7 @@ export class Input {
     s.roll = (k.has('KeyE') ? 1 : 0) - (k.has('KeyQ') ? 1 : 0);
     s.jump = this.pressed.has('Space') || this.pressed.has('TouchJump');
     s.respawn = this.pressed.has('KeyR');
+    this.horn = this.pressed.has('KeyH');
     this.item = this.pressed.has('ArrowDown') || this.pressed.has('KeyF') || this.pressed.has('TouchItem');
     this.next = this.pressed.has('Space') || this.pressed.has('TouchJump') || this.pressed.has('ArrowRight') || this.pressed.has('KeyD');
     s.jumpHeld = k.has('Space') || t.jump;
@@ -82,7 +83,7 @@ export class Input {
     this.menu = false;
     const edge = (name, on) => { const hit = on && !this.padPrev[name]; this.padPrev[name] = on; return hit; };
     // ממזגים את כל השלטים המחוברים (למשל שני Joy-Con נפרדים של נינטנדו)
-    let px = 0, rt = 0, lt = 0, jump = false, resp = false, menu = false, any = false, itemBtn = false;
+    let px = 0, rt = 0, lt = 0, jump = false, resp = false, menu = false, any = false, itemBtn = false, hornBtn = false;
     for (const gp of this.pads()) {
       any = true;
       const std = gp.mapping === 'standard';
@@ -108,7 +109,7 @@ export class Input {
       rt = Math.max(rt, v(7)); lt = Math.max(lt, v(6));
       if (b(1) || b(5)) s.boost = true;
       if (b(2)) s.drift = true;
-      jump ||= b(0); resp ||= b(3); menu ||= b(9); itemBtn ||= b(4);
+      jump ||= b(0); resp ||= b(3); menu ||= b(9); itemBtn ||= b(4); hornBtn ||= b(10) || b(11);
     }
     if (any) {
       if (Math.abs(px) > 0.18) s.steer = -Math.sign(px) * Math.min(1, (Math.abs(px) - 0.18) / 0.7);
@@ -118,6 +119,7 @@ export class Input {
       if (edge('respawn', resp)) s.respawn = true;
       if (edge('menu', menu)) this.menu = true;
       if (edge('item', itemBtn)) this.item = true;
+      if (edge('horn', hornBtn)) this.horn = true;
     }
     if (!this.enabled) { s.throttle = 0; s.steer = 0; s.jump = false; s.jumpHeld = false; s.boost = false; s.drift = false; s.pitch = 0; s.roll = 0; s.respawn = false; }
     return s;

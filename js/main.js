@@ -7,7 +7,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { CarPhysics, CarVisual, carShape, addForce, P as CP, DEFAULT_SKIN, SKIN_OPTS, G_CAR, G_REMOTE } from './car.js';
 import { buildLevel, CHAIN_LEN, RACE_LEVELS, CHAIN_LEVELS, VS_MAPS, BATTLE_MAPS, VS_CATS, vsSplit, mapInfo, trackShape } from './level.js';
-import { WRAPS, GRADS, FEATHERS, ROAD, SHOP, SOURCE, itemName, itemSwatch } from './items.js';
+import { WRAPS, GRADS, FEATHERS, TRAILS, HORNS, ROAD, SHOP, SOURCE, itemName, itemSwatch } from './items.js';
 import { Account, rankOf, AuthError } from './account.js';
 import { Sky, Particles, ChainVisual, tex } from './fx.js';
 import { Net } from './net.js';
@@ -239,6 +239,17 @@ function boxMat() {
   return new THREE.MeshBasicMaterial({ map: boxTex, color: new THREE.Color(1.5, 1.5, 1.5), transparent: true, opacity: 0.92 });
 }
 
+const EMOTES = ['👍', '😂', '😱', '🔥', '👋'];
+// צבע השובל לפי האפקט שנבחר במוסך
+const _tc = new THREE.Color();
+function trailCol(vis, t) {
+  const fx = vis.skin.tfx;
+  if (fx === 1) return _tc.setHSL((t * 0.9) % 1, 1, 0.55);
+  if (fx === 2) return _tc.set(Math.random() > 0.5 ? 0xffffff : 0xffc21a);
+  if (fx === 3) return _tc.set(Math.random() > 0.5 ? 0xd8f8ff : 0x38b6ff);
+  return vis.trailColor;
+}
+
 class Game {
   constructor(mode, level, startAt) {
     this.mode = mode; this.startAt = startAt; this.credit = null; this.teamTime = 0;
@@ -388,10 +399,18 @@ class Game {
   onEvent(m) {
     if (m.k === 'rs' && this.mode === 'chain') this.teamRespawn(false);
     if (m.k === 'it') this.onItem(m);
+    if (m.k === 'emo') this.remotes.get(m.from)?.vis.emote(EMOTES[m.i] || '👍');
+    if (m.k === 'horn') sfx.horn(clamp(Math.round(m.h) || 1, 1, 4));
     if (m.k === 'ko' && this.battle) {
       const who = this.remotes.get(m.from)?.name || 'שחקן';
       if (m.by === net.myId) { this.kos++; sfx.ko(); showMsg(`העפת את ${who}!`, 2000); } else showMsg(`${who} נפל מהזירה`, 1400);
     }
+  }
+
+  emote(i) {
+    if (!EMOTES[i]) return;
+    this.vis.emote(EMOTES[i]);
+    net.sendEvent({ k: 'emo', i });
   }
 
   // ----- חפצים מתיבות ההפתעה -----
@@ -672,8 +691,8 @@ class Game {
         this.particles.emit(_v, _v2, color, 0.45);
       }
     };
-    if (car.boosting && !this.gone) emit(this.pos, this.quat, body.velocity, this.vis.trailColor);
-    for (const r of this.remotes.values()) if (r.has && r.boosting && !r.gone) emit(r.pos, r.quat, r.nv, r.vis.trailColor);
+    if (car.boosting && !this.gone) emit(this.pos, this.quat, body.velocity, trailCol(this.vis, this.time));
+    for (const r of this.remotes.values()) if (r.has && r.boosting && !r.gone) emit(r.pos, r.quat, r.nv, trailCol(r.vis, this.time));
     this.particles.update(dt);
 
     // שרשראות
@@ -683,6 +702,7 @@ class Game {
     }
 
     this.updateItems(dt, inp);
+    if (input.horn && input.enabled && me.skin.horn) { sfx.horn(me.skin.horn); net.sendEvent({ k: 'horn', h: me.skin.horn }); }
     level.update(dt, this.cp);
     this.updateCamera(dt);
     this.sun.position.set(this.focus.x + 12, this.focus.y + 90, this.focus.z - 45);
@@ -870,7 +890,7 @@ function renderAccount() {
     $('#name').value = account.user.name;
   } else {
     box.innerHTML = `<div class="top">${account.profile.xp ? badge : '<b>אורח</b>'}<button id="btnAuth" class="chip">התחברות / הרשמה</button></div>`
-      + (account.profile.xp ? xpHtml() : '') + walletHtml() + '<small>הירשמו כדי לשמור התקדמות ולהופיע בטבלת השיאים</small>';
+      + (account.profile.xp ? xpHtml() : '') + walletHtml() + '<small>ההתקדמות נשמרת בדפדפן הזה. הירשמו כדי להופיע בטבלת השיאים ולשחק מכל מכשיר</small>';
     $('#btnAuth').onclick = () => { $('#authErr').textContent = ''; $('#authName').value = $('#name').value.trim(); $('#authPass').value = ''; show('auth'); };
   }
   $('#name').readOnly = account.loggedIn;
@@ -893,10 +913,21 @@ async function doAuth(kind) {
 // ----- טבלת שיאים -----
 let lbTab = 'race', lbData = null;
 function renderLb() {
-  document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('on', t.dataset.tab === lbTab));
+  document.querySelectorAll('#lb .tab').forEach((t) => t.classList.toggle('on', t.dataset.tab === lbTab));
+  $('#lbLevelRow').classList.toggle('hidden', lbTab !== 'time');
   const list = $('#lbList');
   if (!lbData) { list.innerHTML = '<li>טוען…</li>'; return; }
-  const rows = lbData[lbTab], myName = account.loggedIn ? account.user.name : null;
+  const myName = account.loggedIn ? account.user.name : null;
+  let rows = lbData[lbTab] || [];
+  if (lbTab === 'time') {
+    const k = 'l' + $('#lbLevel').value;
+    rows = (lbData.all || []).filter((e) => e.best && e.best[k] > 0).map((e) => ({ name: e.name, t: e.best[k] })).sort((a, b) => a.t - b.t).slice(0, 50);
+  }
+  if (rows.length && (lbTab === 'tr' || lbTab === 'time')) {
+    list.innerHTML = rows.map((e, i) => `<li class="${e.name === myName ? 'me' : ''}"><span class="n">${i + 1}</span>${esc(e.name)}<span class="v"><b dir="ltr">${lbTab === 'tr' ? e.tr + ' 🏆' : fmt(e.t)}</b></span></li>`).join('');
+    $('#lbNote').textContent = '';
+    return;
+  }
   if (!rows.length) list.innerHTML = '<li>עדיין אין כאן אף אחד. סיימו שלב כשאתם מחוברים לחשבון כדי להופיע ראשונים!</li>';
   else if (lbTab === 'race') list.innerHTML = rows.map((e, i) => `<li class="${e.name === myName ? 'me' : ''}"><span class="n">${i + 1}</span>${esc(e.name)}<span class="v"><em>${e.xp} XP</em><b>שלב ${e.level}</b></span></li>`).join('');
   else list.innerHTML = rows.map((e, i) => `<li class="${myName && e.names.split(' + ').includes(myName) ? 'me' : ''}"><span class="n">${i + 1}</span>${esc(e.names)}<span class="v"><em>${fmt(e.time)}</em><b>שלב ${e.level}</b></span></li>`).join('');
@@ -924,7 +955,7 @@ function renderRoad() {
     const i = Number(b.dataset.i), r = ROAD[i];
     if (account.claim(i, r)) { sfx.init(); sfx.coin(); toast(r.coins ? `קיבלת ${r.coins} מטבעות!` : `קיבלת ${itemName(r.item)} – חפשו במוסך`, 3500); }
   }));
-  $('#roadNote').textContent = account.loggedIn ? 'גביעים מרוויחים בניצחונות במירוץ חברים ובקרב, ובהשלמת שלבים חדשים.' : 'אתם משחקים כאורחים – הירשמו כדי שהגביעים, המטבעות והפריטים יישמרו.';
+  $('#roadNote').textContent = account.loggedIn ? 'גביעים מרוויחים בניצחונות במירוץ חברים ובקרב, ובהשלמת שלבים חדשים.' : 'ההתקדמות נשמרת בדפדפן הזה. הירשמו כדי לשחק מכל מכשיר ולהופיע בטבלת השיאים.';
   $('#roadList').querySelector('.can, .far')?.scrollIntoView({ block: 'center' });
 }
 function renderShop() {
@@ -938,7 +969,7 @@ function renderShop() {
     const it = SHOP[Number(b.dataset.i)];
     if (account.buy(it.item, it.price)) { sfx.init(); sfx.coin(); toast(`קניתם ${itemName(it.item)} – לבישה במוסך`, 3500); }
   }));
-  $('#shopNote').textContent = account.loggedIn ? 'מטבעות מרוויחים בכל משחק ובדרך הגביעים.' : 'אתם משחקים כאורחים – הירשמו כדי שהקניות יישמרו.';
+  $('#shopNote').textContent = account.loggedIn ? 'מטבעות מרוויחים בכל משחק ובדרך הגביעים.' : 'הקניות נשמרות בדפדפן הזה. הירשמו כדי לשחק מכל מכשיר.';
 }
 
 function errText(e) {
@@ -978,7 +1009,7 @@ function buildGarage() {
       const id = key + i, lock = SOURCE[id] && !account.owns(id);
       b.className = 'chip' + (me.skin[key] === i ? ' on' : '') + (lock ? ' locked' : '');
       b.textContent = n + (lock ? ' 🔒' : '');
-      b.onclick = () => { if (lock) { toast(`נעול – משיגים ב${SOURCE[id]}`, 3200); return; } me.skin[key] = i; box.querySelectorAll('.chip').forEach((c, j) => c.classList.toggle('on', j === i)); skinChanged(); };
+      b.onclick = () => { if (lock) { toast(`נעול – משיגים ב${SOURCE[id]}`, 3200); return; } if (key === 'horn') { sfx.init(); sfx.horn(i); } me.skin[key] = i; box.querySelectorAll('.chip').forEach((c, j) => c.classList.toggle('on', j === i)); skinChanged(); };
       box.appendChild(b);
     });
   };
@@ -1014,6 +1045,8 @@ function buildGarage() {
   chips('נוצות זנב', 'feather', FEATHERS.map((f) => (f ? f.n : 'ללא')));
   colors('זוהר ניאון', 'glow');
   colors('שובל בוסט', 'trail');
+  chips('אפקט שובל', 'tfx', TRAILS);
+  chips('צופר (מקש H)', 'horn', HORNS);
 }
 
 function openGarage(from) {
@@ -1125,7 +1158,7 @@ function fillResults() {
     const col = (x) => esc(net.players.find((pl) => pl.id === x.id)?.skin?.color || '#19b5ff');
     const step = (i) => (st[i] ? `<div class="pd p${i + 1}${st[i].me ? ' me' : ''}"><u style="background:${col(st[i])}"></u><b>${esc(st[i].name)}</b><small>${val(st[i])}</small><i>${i + 1}</i></div>` : `<div class="pd p${i + 1} none"><i>${i + 1}</i></div>`);
     $('#resList').innerHTML = `<div class="podium">${step(1)}${step(0)}${step(2)}</div>` + st.slice(3).map((x, i) => `<li value="${i + 4}">${esc(x.name)}<span>${val(x)}</span></li>`).join('');
-    if (c) info = `<div class="pb">מקום ${c.place}</div><div class="xp" dir="ltr">+${c.tr} 🏆 · +${c.coins} 🪙 · +${c.xp} XP</div>` + (c.saved ? '' : '<small>שיחקת כאורח – הירשמו כדי לשמור גביעים ומטבעות.</small>');
+    if (c) info = `<div class="pb">מקום ${c.place}</div><div class="xp" dir="ltr">+${c.tr} 🏆 · +${c.coins} 🪙 · +${c.xp} XP</div>` + (c.saved ? '' : '<small>נשמר בדפדפן הזה. הירשמו כדי להופיע בטבלת השיאים.</small>');
   } else if (chain) {
     const done = st.every((x) => x.fin);
     $('#resTitle').textContent = done ? `שלב ${game.lvl} – עברתם יחד!` : 'תוצאות';
@@ -1143,7 +1176,7 @@ function fillResults() {
     else if (c.newPb) info += `<div class="pb">שיא אישי חדש! (הקודם: ${fmt(c.prev)})</div>`;
     else info += `<div>השיא האישי שלך: ${fmt(best)}</div>`;
     info += `<div class="xp" dir="ltr">+${c.xp} XP${c.tr ? ` · +${c.tr} 🏆` : ''} · +${c.coins} 🪙</div>${xpHtml()}`;
-    if (!c.saved) info += '<small>שיחקת כאורח – הירשמו בתפריט הראשי כדי לשמור התקדמות ולהופיע בטבלת השיאים.</small>';
+    if (!c.saved) info += '<small>נשמר בדפדפן הזה. הירשמו בתפריט הראשי כדי להופיע בטבלת השיאים.</small>';
   } else if (chain && game.teamDone) info = '<small>שיחקת לבד, אז זה נחשב אימון. שחקו בשניים כדי להתקדם בשלבי השרשרת.</small>';
   $('#resInfo').innerHTML = info;
   const canNext = !maps && net.isHost && game.lvl < maxLevel(game.mode) && game.lvl < unlocked(game.mode);
@@ -1205,7 +1238,10 @@ $('#btnNext').onclick = () => { if (game) hostStart(game.mode, game.lvl + 1); };
 $('#btnRetry').onclick = () => { if (game) hostStart(game.mode, game.lvl); };
 $('#btnLb').onclick = openLb;
 $('#btnLbBack').onclick = () => show('menu');
-document.querySelectorAll('.tab').forEach((t) => (t.onclick = () => { lbTab = t.dataset.tab; renderLb(); }));
+document.querySelectorAll('#lb .tab').forEach((t) => (t.onclick = () => { lbTab = t.dataset.tab; renderLb(); }));
+$('#lbLevel').innerHTML = Array.from({ length: RACE_LEVELS }, (_, i) => `<option value="${i + 1}">${i + 1}</option>`).join('');
+$('#lbLevel').onchange = renderLb;
+document.querySelectorAll('#emotes button').forEach((b) => (b.onclick = () => { if (game) game.emote(Number(b.dataset.e)); b.blur(); }));
 $('#btnLogin').onclick = () => doAuth('login');
 $('#btnRegister').onclick = () => doAuth('register');
 $('#btnAuthBack').onclick = () => show('menu');
@@ -1242,6 +1278,7 @@ $('#btnSound').onclick = () => { settings.sound = !settings.sound; store.set('so
 $('#tMenu').onclick = () => setPause(true);
 $('#item').onclick = () => input.pressed.add('TouchItem');
 addEventListener('keydown', (e) => {
+  if (game && input.enabled && /^Digit[1-5]$/.test(e.code) && e.target.tagName !== 'INPUT' && !e.repeat) game.emote(Number(e.code.slice(5)) - 1);
   if (e.code === 'Escape' && game) setPause($('#pause').classList.contains('hidden'));
   if (e.code === 'KeyM' && game && e.target.tagName !== 'INPUT') { settings.sound = !settings.sound; sfx.setEnabled(settings.sound); }
 });

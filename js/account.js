@@ -33,7 +33,7 @@ export class Account {
   constructor() {
     this.online = ONLINE;
     this.user = null;            // {name, uid}
-    this.profile = emptyProfile(); // אורח: נשמר רק עד לרענון הדף
+    this.profile = fix(ls.get('guest', null), ''); // אורח: נשמר בדפדפן הזה
     this.tok = null;             // Firebase: {idToken, refreshToken, exp}
     this.onChange = () => {};
   }
@@ -65,7 +65,7 @@ export class Account {
         this.user = { name: u.name, uid: 'L:' + keyOf(u.name) };
         this.profile = fix(u.profile, u.name);
       }
-    } catch { this.user = null; this.tok = null; this.profile = emptyProfile(); }
+    } catch { this.user = null; this.tok = null; this.profile = fix(ls.get('guest', null), ''); }
     this.onChange();
   }
 
@@ -73,16 +73,19 @@ export class Account {
     name = this.validate(name, pass);
     if (ONLINE) {
       await this.fbAuth('signUp', name, pass);
-      this.profile = fix(null, name);
+      this.profile = { ...fix(ls.get('guest', null), name), name }; // ההתקדמות שנצברה כאורח עוברת לחשבון החדש
+      ls.del('guest');
       await this.db('PUT', `users/${this.user.uid}`, this.profile);
     } else {
       const users = ls.get('users', {});
       if (users[keyOf(name)]) throw new AuthError('שם המשתמש כבר תפוס');
       const salt = hex(crypto.getRandomValues(new Uint8Array(12)));
-      users[keyOf(name)] = { name, salt, hash: await sha(salt + pass), profile: emptyProfile(name) };
+      const start = { ...fix(ls.get('guest', null), name), name };
+      ls.del('guest');
+      users[keyOf(name)] = { name, salt, hash: await sha(salt + pass), profile: start };
       ls.set('users', users);
       this.user = { name, uid: 'L:' + keyOf(name) };
-      this.profile = fix(null, name);
+      this.profile = fix(start, name);
       ls.set('session', { name });
     }
     this.onChange();
@@ -106,7 +109,7 @@ export class Account {
   }
 
   logout() {
-    this.user = null; this.tok = null; this.profile = emptyProfile();
+    this.user = null; this.tok = null; this.profile = fix(ls.get('guest', null), '');
     ls.del('session');
     this.onChange();
   }
@@ -167,6 +170,7 @@ export class Account {
     const tr = first ? level : Math.floor(level / 3); // שלב חדש = מספר השלב; שלב שכבר הושלם = שליש, מעוגל למטה
     const coins = first ? 30 + level * 2 : newPb ? 12 : 5;
     p.xp = (p.xp || 0) + xp; p.tr = (p.tr || 0) + tr; p.coins = (p.coins || 0) + coins;
+    this.keep();
     return { first, newPb, prev, xp, tr, coins, saved: this.loggedIn };
   }
 
@@ -185,11 +189,15 @@ export class Account {
     return res;
   }
 
+  // אורח: שומרים את הפרופיל בדפדפן
+  keep() { if (!this.user) ls.set('guest', this.profile); }
+
   // תגמול ממצבי החברים (מירוץ / קרב)
   gain(g) {
     const p = this.profile;
     p.xp = (p.xp || 0) + (g.xp || 0); p.tr = Math.max(0, (p.tr || 0) + (g.tr || 0)); p.coins = (p.coins || 0) + (g.coins || 0);
     if (this.loggedIn) this.persist().then(() => this.pushRace()).catch(() => {});
+    this.keep();
     this.onChange();
     return { ...g, saved: this.loggedIn };
   }
@@ -198,6 +206,7 @@ export class Account {
     const p = this.profile;
     if (p.own[id] || (p.coins || 0) < price) return false;
     p.coins -= price; p.own[id] = 1;
+    this.keep();
     if (this.loggedIn) this.persist().catch(() => {});
     this.onChange();
     return true;
@@ -210,6 +219,7 @@ export class Account {
     p.road = (p.road || 0) | (1 << i);
     if (r.coins) p.coins = (p.coins || 0) + r.coins;
     if (r.item) p.own[r.item] = 1;
+    this.keep();
     if (this.loggedIn) this.persist().catch(() => {});
     this.onChange();
     return true;
@@ -225,7 +235,12 @@ export class Account {
     }
   }
 
-  raceEntry() { return { name: this.user.name, level: this.profile.race, xp: this.profile.xp, tr: this.profile.tr || 0 }; }
+  // best: זמני השיא לכל שלב (מפתח l<שלב>, כדי ש-Firebase לא יהפוך את זה למערך)
+  raceEntry() {
+    const best = {};
+    for (const [l, ms] of Object.entries(this.profile.bestRace)) best['l' + l] = ms;
+    return { name: this.user.name, level: this.profile.race || 0, xp: this.profile.xp, tr: this.profile.tr || 0, best };
+  }
 
   async pushRace() {
     if (!this.user || !(this.profile.race || this.profile.tr)) return;
@@ -252,7 +267,8 @@ export class Account {
     const lb = this.exportLb();
     const str = (v) => String(v || '').slice(0, 40), num = (v) => Math.max(0, Math.round(Number(v) || 0));
     for (const [k, e] of Object.entries(data.race || {}).slice(0, 300)) {
-      const cur = lb.race[k], n = { name: str(e.name), level: num(e.level), xp: num(e.xp), tr: num(e.tr) };
+      const cur = lb.race[k], n = { name: str(e.name), level: num(e.level), xp: num(e.xp), tr: num(e.tr), best: {} };
+      for (const [bk, bv] of Object.entries(e.best || {}).slice(0, 40)) if (/^l\d{1,2}$/.test(bk) && num(bv)) n.best[bk] = num(bv);
       if (!n.name) continue;
       if (!cur || n.level > cur.level || (n.level === cur.level && n.xp > cur.xp)) lb.race[safeKey(k)] = n;
     }
@@ -268,8 +284,10 @@ export class Account {
     let lb;
     if (ONLINE) lb = (await this.db('GET', 'lb').catch(() => null)) || {};
     else lb = this.exportLb();
-    const race = Object.values(lb.race || {}).sort((a, b) => b.level - a.level || b.xp - a.xp).slice(0, 50);
+    const all = Object.values(lb.race || {}).filter((e) => e && e.name);
+    const race = all.filter((e) => e.level > 0).sort((a, b) => b.level - a.level || b.xp - a.xp).slice(0, 50);
+    const tr = all.filter((e) => e.tr > 0).sort((a, b) => b.tr - a.tr).slice(0, 50);
     const chain = Object.values(lb.chain || {}).sort((a, b) => b.level - a.level || a.time - b.time).slice(0, 50);
-    return { race, chain };
+    return { race, chain, tr, all };
   }
 }

@@ -251,14 +251,14 @@ export class CarPhysics {
 export const SKIN_OPTS = {
   types: ['וייפר', 'טיטאן', 'להב'],
   finishes: ['מבריק', 'מטאלי', 'מט', 'כרום'],
-  wheels: ['קלאסי', 'ניאון', 'חישורים'],
+  wheels: ['קלאסי', 'ניאון', 'חישורים', 'דיסק מלא', 'טבעות ניאון'],
   spoilers: ['ללא', 'כנף', 'כנף מירוץ', 'סנפיר'],
   toppers: ['ללא', 'אנטנה', 'כתר', 'קרניים', 'מדחף', 'הילה', 'ברווז גומי'],
   colors: ['#1e7bff', '#ff7a1a', '#ff2d55', '#22d38a', '#ffd21a', '#b14dff', '#00e5ff', '#ff5ad1', '#ffffff', '#20242e', '#8a5a2b', '#9be600'],
 };
 export const DEFAULT_SKIN = {
   type: 0, color: '#1e7bff', accent: '#ff7a1a', finish: 0, wheel: 1, rim: '#ffffff',
-  spoiler: 1, topper: 0, glow: '#00e5ff', trail: '#ff9a2e', wrap: 0, grad: 0, feather: 0,
+  spoiler: 1, topper: 0, glow: '#00e5ff', trail: '#ff9a2e', wrap: 0, grad: 0, feather: 0, tfx: 0, horn: 1,
 };
 
 const TYPES = [
@@ -457,7 +457,17 @@ export class CarVisual {
           spin.add(ring);
         }
       }
-      const spokes = s.wheel === 2 ? 5 : 2;
+      if (s.wheel === 3) {
+        spin.add(new THREE.Mesh(new THREE.CylinderGeometry(R * 0.9, R * 0.9, 0.37, 22).rotateZ(Math.PI / 2), rimMat));
+        spin.add(new THREE.Mesh(new THREE.CylinderGeometry(R * 0.22, R * 0.22, 0.4, 12).rotateZ(Math.PI / 2), neonMat));
+      } else if (s.wheel === 4) {
+        for (const sx of [-1, 1]) for (const k of [0.45, 0.68, 0.9]) {
+          const ring = new THREE.Mesh(new THREE.TorusGeometry(R * k, 0.025, 6, 24).rotateY(Math.PI / 2), neonMat);
+          ring.position.x = sx * 0.178;
+          spin.add(ring);
+        }
+      }
+      const spokes = s.wheel === 2 ? 5 : s.wheel === 3 ? 0 : 2;
       for (let i = 0; i < spokes; i++) {
         const sp = new THREE.Mesh(new THREE.BoxGeometry(0.38, R * 1.5, 0.07), s.wheel === 2 ? rimMat : dark);
         sp.rotation.x = (i / spokes) * Math.PI;
@@ -564,6 +574,25 @@ export class CarVisual {
     sp.scale.set(3.4, 0.85, 1);
     sp.position.y = 2.2;
     this.group.add(sp);
+  }
+
+  // אימוג'י שצף מעל המכונית לכמה שניות
+  emote(txt) {
+    if (this.emo) { this.emo.material.map.dispose(); this.emo.material.dispose(); this.emo.removeFromParent(); }
+    const c = document.createElement('canvas');
+    c.width = c.height = 128;
+    const x = c.getContext('2d');
+    x.font = '96px "Segoe UI Emoji", "Apple Color Emoji", sans-serif';
+    x.textAlign = 'center'; x.textBaseline = 'middle';
+    x.fillText(txt, 64, 70);
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    const sp = (this.emo = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, transparent: true, depthWrite: false })));
+    sp.scale.set(2.2, 2.2, 1);
+    sp.position.y = 3.6;
+    this.group.add(sp);
+    clearTimeout(this.emoT);
+    this.emoT = setTimeout(() => { if (this.emo === sp) { sp.material.map.dispose(); sp.material.dispose(); sp.removeFromParent(); this.emo = null; } }, 2600);
   }
 
   // lens = מרחק קרן לכל גלגל (null = מנוחה)

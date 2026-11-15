@@ -2,7 +2,7 @@
 // 1. ישיר בין הדפדפנים (WebRTC דרך PeerJS) – מהיר, אבל נכשל כששני הנתבים לא מאפשרים חיבור ישיר.
 // 2. ממסר דרך Firebase Realtime Database – גיבוי אוטומטי כשהחיבור הישיר נכשל (עובד בכל רשת).
 // המארח יוצר חדר עם קוד, שאר השחקנים מתחברים אליו והוא מעביר הודעות בין כולם.
-import { FIREBASE } from './config.js';
+import { FIREBASE } from './config.js?v=1794770732';
 
 const PREFIX = 'nitrolink1-';
 const ALPHA = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';

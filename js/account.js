@@ -201,6 +201,14 @@ export class Account {
     this.onChange();
     return { ...g, saved: this.loggedIn };
   }
+  // המראה של המכונית נשמר בפרופיל, כך שהוא הולך עם המשתמש לכל מכשיר
+  setSkin(skin) {
+    this.profile.skin = { ...skin };
+    this.keep();
+    if (!this.loggedIn) return;
+    clearTimeout(this.skinT);
+    this.skinT = setTimeout(() => this.persist().catch(() => {}), 1500);
+  }
   owns(id) { return !!this.profile.own[id]; }
   buy(id, price) {
     const p = this.profile;

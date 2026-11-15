@@ -106,6 +106,8 @@ class Showroom {
     floor.receiveShadow = true;
     s.add(floor);
     this.cars = [];
+    this.particles = new Particles(s);
+    this.boost = false;
     this.pads = new THREE.Group();
     s.add(this.pads);
     this.t = 0;
@@ -129,7 +131,17 @@ class Showroom {
   update(dt) {
     this.t += dt;
     const n = Math.max(1, this.cars.length), wide = camera.aspect > 1.15;
-    this.cars.forEach((c, i) => { c.group.rotation.y = this.t * 0.45 + i * 0.7; c.update(0.25 * Math.sin(this.t), null, this.t * 2, false, this.t); });
+    this.cars.forEach((c, i) => { c.group.rotation.y = this.t * 0.45 + i * 0.7; c.update(0.25 * Math.sin(this.t), null, this.t * 2, !!this.boost, this.t); });
+    if (this.boost && this.cars[0]) {
+      // שובל לדוגמה, כדי שיראו את אפקט השובל
+      const c = this.cars[0], col = trailCol(c, this.t);
+      for (const sx of [-0.38, 0.38]) {
+        _v.set(sx, -0.12, -2.4).applyQuaternion(c.group.quaternion).add(c.group.position);
+        _v2.set((Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2, -9).applyQuaternion(c.group.quaternion);
+        this.particles.emit(_v, _v2, col, 0.5);
+      }
+    }
+    this.particles.update(dt);
     const R = (7.5 + n * 2.1) * (wide ? 1 : 1.5);
     camera.fov = 50;
     camera.updateProjectionMatrix();
@@ -1158,7 +1170,34 @@ function renderAccount() {
     ? 'שם המשתמש יופיע בטבלת השיאים העולמית. ההתקדמות, השיאים וה‑XP נשמרים בחשבון.'
     : 'החשבון נשמר במכשיר הזה. טבלת השיאים מתעדכנת בין חברים שמשחקים יחד באותו חדר.';
 }
-account.onChange = () => { readName(); renderAccount(); if (screen === 'lobby') renderLobby(); if (screen === 'road') renderRoad(); if (screen === 'shop') renderShop(); };
+// המראה של המכונית שייך למשתמש: כשמתחברים, מתנתקים או נכנסים מחדש – טוענים את המראה השמור שלו
+let skinOwner;
+function loadUserSkin() {
+  const key = account.uid || 'guest';
+  if (key === skinOwner) return;
+  skinOwner = key;
+  const sk = account.profile.skin;
+  if (sk && typeof sk === 'object') { me.skin = { ...DEFAULT_SKIN, ...sk }; store.set('skin', me.skin); } else account.setSkin(me.skin);
+  if (!net.offline) net.updateMe(me);
+  if (screen !== 'game') refreshShowroom();
+}
+// תצוגה מקדימה של פריט על המכונית (בלי לשמור)
+let pvItem = null;
+function previewItem(id) {
+  const m = /^([a-z]+)(\d+)$/.exec(id || '');
+  if (!m) return;
+  const key = m[1], i = Number(m[2]);
+  pvItem = id;
+  document.querySelectorAll('.items li').forEach((li) => li.classList.toggle('pv', li.dataset.item === id));
+  if (key === 'horn') { sfx.init(); sfx.horn(i); return; }
+  const sk = { ...me.skin, [key]: i };
+  if (key === 'type' && i >= 3) { sk.wrap = 0; sk.grad = 0; }
+  showroom.setCars([{ name: me.name, skin: sk }]);
+  showroom.boost = key === 'tfx';
+}
+function endPreview() { pvItem = null; showroom.boost = false; refreshShowroom(); }
+
+account.onChange = () => { readName(); loadUserSkin(); renderAccount(); if (screen === 'lobby') renderLobby(); if (screen === 'road') renderRoad(); if (screen === 'shop') renderShop(); };
 async function doAuth(kind) {
   const err = $('#authErr');
   err.textContent = kind === 'login' ? 'מתחבר…' : 'נרשם…';
@@ -1209,13 +1248,14 @@ function renderRoad() {
     const got = account.claimed(i), can = tr >= r.at && !got;
     const what = r.coins ? `${r.coins} מטבעות` : esc(itemName(r.item));
     const act = got ? '<em>נאסף ✓</em>' : can ? `<button class="chip on" data-i="${i}">אסוף</button>` : `<em>עוד ${r.at - tr} 🏆</em>`;
-    return `<li class="${got ? 'got' : can ? 'can' : tr >= r.at ? '' : 'far'}"><span class="at">🏆 ${r.at}</span><i style="background:${r.item ? itemSwatch(r.item) : 'radial-gradient(circle, #fff3a0, #ffb41a)'}"></i><b>${what}</b>${act}</li>`;
+    return `<li data-item="${r.item || ''}" class="${r.item === pvItem && pvItem ? 'pv ' : ''}${got ? 'got' : can ? 'can' : tr >= r.at ? '' : 'far'}"><span class="at">🏆 ${r.at}</span><i style="background:${r.item ? itemSwatch(r.item) : 'radial-gradient(circle, #fff3a0, #ffb41a)'}"></i><b>${what}</b>${act}</li>`;
   }).join('');
+  $('#roadList').querySelectorAll('li[data-item]').forEach((li) => (li.onclick = (e) => { if (e.target.tagName !== 'BUTTON') previewItem(li.dataset.item); }));
   $('#roadList').querySelectorAll('button').forEach((b) => (b.onclick = () => {
     const i = Number(b.dataset.i), r = ROAD[i];
     if (account.claim(i, r)) { sfx.init(); sfx.coin(); toast(r.coins ? `קיבלת ${r.coins} מטבעות!` : `קיבלת ${itemName(r.item)} – חפשו במוסך`, 3500); }
   }));
-  $('#roadNote').textContent = account.loggedIn ? 'גביעים מרוויחים בניצחונות במירוץ חברים ובקרב, ובהשלמת שלבים חדשים.' : 'ההתקדמות נשמרת בדפדפן הזה. הירשמו כדי לשחק מכל מכשיר ולהופיע בטבלת השיאים.';
+  $('#roadNote').textContent = account.loggedIn ? 'לחצו על פריט כדי לראות אותו על המכונית. גביעים מרוויחים בשלבים ובניצחונות.' : 'ההתקדמות נשמרת בדפדפן הזה. הירשמו כדי לשחק מכל מכשיר ולהופיע בטבלת השיאים.';
   $('#roadList').querySelector('.can, .far')?.scrollIntoView({ block: 'center' });
 }
 function renderShop() {
@@ -1223,13 +1263,14 @@ function renderShop() {
   $('#shopTop').innerHTML = walletHtml();
   $('#shopList').innerHTML = SHOP.map((it, i) => {
     const own = account.owns(it.item);
-    return `<li class="${own ? 'got' : ''}"><i style="background:${itemSwatch(it.item)}"></i><b>${esc(itemName(it.item))}</b>${own ? '<em>בבעלותך ✓</em>' : `<button class="chip on" data-i="${i}" ${coins < it.price ? 'disabled' : ''}>${it.price} 🪙</button>`}</li>`;
+    return `<li data-item="${it.item}" class="${it.item === pvItem ? 'pv ' : ''}${own ? 'got' : ''}"><i style="background:${itemSwatch(it.item)}"></i><b>${esc(itemName(it.item))}</b>${own ? '<em>בבעלותך ✓</em>' : `<button class="chip on" data-i="${i}" ${coins < it.price ? 'disabled' : ''}>${it.price} 🪙</button>`}</li>`;
   }).join('');
+  $('#shopList').querySelectorAll('li[data-item]').forEach((li) => (li.onclick = (e) => { if (e.target.tagName !== 'BUTTON') previewItem(li.dataset.item); }));
   $('#shopList').querySelectorAll('button').forEach((b) => (b.onclick = () => {
     const it = SHOP[Number(b.dataset.i)];
     if (account.buy(it.item, it.price)) { sfx.init(); sfx.coin(); toast(`קניתם ${itemName(it.item)} – לבישה במוסך`, 3500); }
   }));
-  $('#shopNote').textContent = account.loggedIn ? 'מטבעות מרוויחים בכל משחק ובדרך הגביעים.' : 'הקניות נשמרות בדפדפן הזה. הירשמו כדי לשחק מכל מכשיר.';
+  $('#shopNote').textContent = account.loggedIn ? 'לחצו על פריט כדי לראות אותו על המכונית. מטבעות מרוויחים בכל משחק ובדרך הגביעים.' : 'לחצו על פריט כדי לראות אותו על המכונית. הקניות נשמרות בדפדפן הזה; הירשמו כדי לשחק מכל מכשיר.';
 }
 
 function errText(e) {
@@ -1246,6 +1287,7 @@ function errText(e) {
 let skinTimer = 0;
 function skinChanged() {
   store.set('skin', me.skin);
+  account.setSkin(me.skin);
   clearTimeout(skinTimer);
   skinTimer = setTimeout(() => {
     if (garageFrom === 'lobby') net.updateMe(me); else refreshShowroom();
@@ -1269,7 +1311,7 @@ function buildGarage() {
       const id = key + i, lock = SOURCE[id] && !account.owns(id);
       b.className = 'chip' + (me.skin[key] === i ? ' on' : '') + (lock ? ' locked' : '');
       b.textContent = n + (lock ? ' 🔒' : '');
-      b.onclick = () => { if (lock) { toast(`נעול – משיגים ב${SOURCE[id]}`, 3200); return; } if (key === 'horn') { sfx.init(); sfx.horn(i); } me.skin[key] = i; box.querySelectorAll('.chip').forEach((c, j) => c.classList.toggle('on', j === i)); skinChanged(); };
+      b.onclick = () => { if (lock) { toast(`תצוגה מקדימה בלבד – משיגים ב${SOURCE[id]}`, 3200); if (garageFrom === 'menu') previewItem(id); return; } if (key === 'horn') { sfx.init(); sfx.horn(i); } me.skin[key] = i; box.querySelectorAll('.chip').forEach((c, j) => c.classList.toggle('on', j === i)); skinChanged(); };
       box.appendChild(b);
     });
   };
@@ -1553,8 +1595,8 @@ $('#btnQuality').onclick = () => {
 $('#btnMusic').onclick = () => { settings.music = !settings.music; store.set('music', settings.music); sfx.setMusic(settings.music); setPause(true); };
 $('#btnRoad').onclick = () => { readName(); show('road'); renderRoad(); };
 $('#btnShop').onclick = () => { readName(); show('shop'); renderShop(); };
-$('#btnRoadBack').onclick = () => show('menu');
-$('#btnShopBack').onclick = () => show('menu');
+$('#btnRoadBack').onclick = () => { show('menu'); endPreview(); };
+$('#btnShopBack').onclick = () => { show('menu'); endPreview(); };
 $('#btnSound').onclick = () => { settings.sound = !settings.sound; store.set('sound', settings.sound); sfx.setEnabled(settings.sound); setPause(true); };
 $('#tMenu').onclick = () => setPause(true);
 $('#item').onclick = () => input.pressed.add('TouchItem');
@@ -1588,6 +1630,7 @@ net.leave = () => { lbShared = 0; origLeave(); };
 const room = new URLSearchParams(location.search).get('room');
 if (room) { $('#code').value = room.toUpperCase().slice(0, 5); toast('הקלידו שם ולחצו "הצטרף"', 5000); }
 resize();
+loadUserSkin();
 renderAccount();
 account.restore();
 show('menu');

@@ -449,7 +449,7 @@ class Game {
           // מי שמוביל מקבל פחות חפצים חזקים
           const lead = this.standings()[0]?.me, r = Math.random();
           this.item = lead ? (r < 0.4 ? 1 : r < 0.7 ? 2 : 4) : r < 0.3 ? 1 : r < 0.48 ? 2 : r < 0.68 ? 3 : r < 0.86 ? 4 : 5;
-          hud.item.innerHTML = `${ITEMS[this.item].n}<small>${isTouch ? 'הקישו לשימוש' : 'F / LB'}</small>`;
+          hud.item.innerHTML = `${ITEMS[this.item].n}<small>${isTouch ? 'הקישו לשימוש' : 'חץ מטה / LB'}</small>`;
           hud.item.classList.remove('hidden');
           sfx.coin();
         }
@@ -495,7 +495,8 @@ class Game {
       if (n >= 2) {
         // תגמול קטן בכוונה, ורק למנצח – כדי שלא ישתלם לחברים להפסיד בכוונה אחד לשני
         const win = place === 1 && !(this.mode === 'vs' && !this.fin);
-        this.credit = account.gain({ tr: win ? 1 : 0, coins: win ? 4 : 0, xp: 30 + (n - place) * 15 });
+        const dnf = this.mode === 'vs' && !this.fin;
+        this.credit = account.gain({ tr: dnf ? 0 : [3, 2, 1][place - 1] ?? 0, coins: win ? 4 : 0, xp: 30 + (n - place) * 15 });
         this.credit.place = place;
       }
       showResults();

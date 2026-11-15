@@ -60,7 +60,7 @@ export class Input {
   read() {
     const k = this.keys, s = this.state, t = this.touch;
     const d = (a, b) => (k.has(a) || k.has(b) ? 1 : 0);
-    s.throttle = d('KeyW', 'ArrowUp') - d('KeyS', 'ArrowDown');
+    s.throttle = d('KeyW', 'ArrowUp') - (k.has('KeyS') ? 1 : 0); // חץ מטה שמור לשימוש בחפץ
     s.steer = d('KeyA', 'ArrowLeft') - d('KeyD', 'ArrowRight');
     s.boost = k.has('ShiftLeft') || k.has('ShiftRight');
     s.drift = k.has('KeyX') || k.has('KeyC'); // בלי Ctrl – כדי ש-Ctrl+W לא יסגור את הלשונית
@@ -68,7 +68,7 @@ export class Input {
     s.roll = (k.has('KeyE') ? 1 : 0) - (k.has('KeyQ') ? 1 : 0);
     s.jump = this.pressed.has('Space') || this.pressed.has('TouchJump');
     s.respawn = this.pressed.has('KeyR');
-    this.item = this.pressed.has('KeyF') || this.pressed.has('TouchItem');
+    this.item = this.pressed.has('ArrowDown') || this.pressed.has('KeyF') || this.pressed.has('TouchItem');
     this.next = this.pressed.has('Space') || this.pressed.has('TouchJump') || this.pressed.has('ArrowRight') || this.pressed.has('KeyD');
     s.jumpHeld = k.has('Space') || t.jump;
 

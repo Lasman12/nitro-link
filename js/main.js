@@ -1236,7 +1236,9 @@ let lbFrom = 'menu';
 async function openLb(from = 'menu') {
   lbFrom = from;
   lbData = null;
-  show('lb');
+  $('#lb').classList.toggle('ingame', from === 'game');
+  // באמצע משחק הטבלה נפתחת מעל המשחק, בלי לצאת ממנו
+  if (from === 'game') { $('#pause').classList.add('hidden'); $('#lb').classList.remove('hidden'); input.enabled = false; } else show('lb');
   renderLb();
   try { lbData = await account.leaderboard(); } catch { lbData = { race: [], chain: [] }; }
   renderLb();
@@ -1616,7 +1618,11 @@ $('#btnStart').onclick = () => hostStart(lobbyMode, lobbyLevel[lobbyMode]);
 $('#btnNext').onclick = () => { if (game) hostStart(game.mode, game.lvl + 1); };
 $('#btnRetry').onclick = () => { if (game) hostStart(game.mode, game.lvl); };
 $('#btnLb').onclick = () => openLb('menu');
-$('#btnLbBack').onclick = () => { if (lbFrom === 'lobby' && net.players.length) enterLobby(); else show('menu'); };
+$('#btnLbBack').onclick = () => {
+  if (lbFrom === 'game' && game) { $('#lb').classList.add('hidden'); input.enabled = true; }
+  else if (lbFrom === 'lobby' && net.players.length) enterLobby(); else show('menu');
+};
+$('#btnPauseLb').onclick = () => openLb('game');
 $('#btnLobbyLb').onclick = () => openLb('lobby');
 document.querySelectorAll('#lb .tab').forEach((t) => (t.onclick = () => { lbTab = t.dataset.tab; renderLb(); }));
 $('#lbLevel').innerHTML = Array.from({ length: RACE_LEVELS }, (_, i) => `<option value="${i + 1}">${i + 1}</option>`).join('');

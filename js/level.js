@@ -68,6 +68,7 @@ class Builder {
     this.cps = []; this.pads = []; this.dyn = []; this.buttons = []; this.finish = null; this.minY = 0;
     this.path = []; // נקודות לאורך המסלול – כדי שקישוטים לא יונחו עליו, ולזיהוי נפילה
     this.segs = [];
+    this.route = []; // קו הנסיעה לבוטים: נקודות כל 8 מטר, עם סימון של פערים
     // בשרשרת הרצפות הן "מגדלים" עמוקים: מכונית שתלויה על השרשרת נשענת על הקיר ועולה לאורכו,
     // במקום להיסחף אל מתחת לפלטפורמה ולהיתקע שם
     this.thick = o.chain ? 24 : 1.2;
@@ -131,14 +132,20 @@ class Builder {
     for (const s of [-1, 1]) {
       this.addGeo(rise ? 'trimB' : 'trimA', new THREE.BoxGeometry(0.28, 0.1, slope), mid.clone().addScaledVector(l, s * (w / 2 - 0.14)).addScaledVector(n, 0.03), q);
     }
-    this.mark(len, off);
+    this.mark(len, off, { stay, routeLen: o.routeLen, rise });
     if (!stay) { this.p.addScaledVector(f, len); this.p.y += rise; }
   }
-  mark(len, off = 0) {
+  mark(len, off = 0, o = {}) {
     const f = this.F(), l = this.Lf();
+    if (!o.stay) for (let d = 0, L = o.routeLen ?? len; d < L || d === 0; d += 8) {
+      const pt = this.p.clone().addScaledVector(f, d).addScaledVector(l, off);
+      pt.y += ((o.rise || 0) * d) / (len || 1);
+      pt.gap = !!o.gap;
+      this.route.push(pt);
+    }
     for (let d = 0; d <= len; d += 8) this.path.push(this.p.clone().addScaledVector(f, d).addScaledVector(l, off));
   }
-  gap(len, rise = 0) { this.mark(len); this.p.addScaledVector(this.F(), len); this.p.y += rise; }
+  gap(len, rise = 0) { this.mark(len, 0, { gap: true, rise }); this.p.addScaledVector(this.F(), len); this.p.y += rise; }
 
   block(a, l, size, key = 'hazard', yawAdd = 0) {
     this.solid(this.at(a, l, size[1] / 2), size, this.quat(0, yawAdd), key);
@@ -153,7 +160,7 @@ class Builder {
     const side = deg > 0 ? -1 : 1;
     this.wall(size - 0.4, 0, [size, 1.4, 0.8]);
     this.wall(size / 2, side * (size / 2 - 0.4), [0.8, 1.4, size]);
-    this.seg(size, { w: size });
+    this.seg(size, { w: size, routeLen: size / 2 });
     this.p.addScaledVector(f, -size / 2);
     this.yaw += (deg * Math.PI) / 180;
     this.p.addScaledVector(this.F(), size / 2);
@@ -364,11 +371,11 @@ class Builder {
       this.group.add(m);
     }
     this.ctx.scene.add(this.group);
-    const { cps, pads, dyn, buttons, finish, group, mats, path, T } = this;
+    const { cps, pads, dyn, buttons, finish, group, mats, path, T, route } = this;
     const tq = new THREE.Quaternion();
     const green = hdr(0x2bff7a, 1.4), idle = hdr(this.T.trimB, 1.4);
     return {
-      sky: T.sky, look: T, path, group, cps, pads, dyn, buttons, finish, killY: this.minY - 40,
+      sky: T.sky, look: T, path, route, group, cps, pads, dyn, buttons, finish, killY: this.minY - 40,
 
       inZone(z, p) {
         const dx = p.x - z.pos.x, dy = p.y - z.pos.y, dz = p.z - z.pos.z;
@@ -385,8 +392,9 @@ class Builder {
         return y;
       },
       spawn(i, slot, count = 1) {
-        const z = cps[clamp(i, 0, cps.length - 1)], cols = Math.min(4, count);
-        const col = slot % 4, row = Math.floor(slot / 4);
+        // במסלול צר מסדרים את המכוניות בפחות טורים, כדי שאף אחת לא תתחיל על השפה
+        const z = cps[clamp(i, 0, cps.length - 1)], cols = Math.max(1, Math.min(4, count, Math.floor((z.w - 1) / 2.8)));
+        const col = slot % cols, row = Math.floor(slot / cols);
         const pos = z.pos.clone().addScaledVector(z.l, ((cols - 1) / 2 - col) * 3.6).addScaledVector(z.f, 5 - row * 6.5);
         pos.y += 1.1;
         return { pos, yaw: z.yaw };

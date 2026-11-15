@@ -184,7 +184,7 @@ export class Account {
   // team = [{name, uid}] של כל השחקנים בשרשרת
   finishChain(level, ms, team) {
     const res = this.award('chain', level, ms);
-    if (this.loggedIn) this.persist().then(() => this.pushChain(level, ms, team)).catch(() => {});
+    if (this.loggedIn) this.persist().then(() => team && this.pushChain(level, ms, team)).catch(() => {});
     this.onChange();
     return res;
   }

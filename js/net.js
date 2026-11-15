@@ -343,6 +343,20 @@ export class Net {
 
   hostCmd(m) { if (this.isHost) this.broadcast(m); }
 
+  // ----- בוטים: שחקנים שהמארח מריץ בעצמו -----
+  get bots() { return this.players.filter((p) => p.bot); }
+  addBot(name, skin, lvl = 4) {
+    if (!this.isHost || this.bots.length >= 3 || this.players.length >= MAX_PLAYERS) return;
+    this.players.push({ id: this.nextId++, name, skin, uid: null, bot: true, lvl });
+    this.syncLobby();
+  }
+  setBot(id, lvl) { const p = this.players.find((x) => x.id === id && x.bot); if (p && this.isHost) { p.lvl = lvl; this.syncLobby(); } }
+  removeBot(id) { if (!this.isHost) return; this.players = this.players.filter((p) => !(p.bot && p.id === id)); this.syncLobby(); }
+  sendBotState(id, d) {
+    if (this.offline || !this.isHost) return;
+    this.broadcast({ t: 's1', id, n: ++this.seq, d });
+  }
+
   // ----- לקוח -----
   clientTick() {
     const now = performance.now();

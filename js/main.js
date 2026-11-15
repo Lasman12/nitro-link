@@ -13,6 +13,7 @@ import { Sky, Particles, ChainVisual, tex } from './fx.js';
 import { Net } from './net.js';
 import { Input } from './input.js';
 import { Sfx } from './audio.js';
+import { Bot, BOT_NAMES, botSkin } from './bot.js';
 
 const $ = (s) => document.querySelector(s);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -213,6 +214,14 @@ const hud = {
   nitro: $('#nitro'), nitroFill: $('#nitroFill'), battle: $('#battleHud'), info: $('#info'), item: $('#item'),
 };
 let msgTimer = 0;
+function banner(text, cls, ms = 2400) {
+  const el = $('#banner');
+  el.textContent = text;
+  el.className = '';
+  void el.offsetWidth; // מאתחל את האנימציה
+  el.style.setProperty('--ms', ms + 'ms');
+  el.className = cls + ' show';
+}
 function showMsg(text, ms = 1600) {
   hud.msg.textContent = text;
   hud.msg.classList.add('show');
@@ -266,7 +275,7 @@ class Game {
     world.addContactMaterial(new CANNON.ContactMaterial(this.carMat, kinMat, { friction: 0.05, restitution: 0.3 }));
     world.addContactMaterial(new CANNON.ContactMaterial(this.carMat, this.carMat, { friction: 0.05, restitution: 0.35 }));
 
-    this.level = buildLevel(mode, level, { scene, world, groundMat, kinMat, solo: net.players.length < 2 });
+    this.level = buildLevel(mode, level, { scene, world, groundMat, kinMat, solo: net.players.filter((p) => !p.bot).length < 2 });
     this.lvl = this.level.level;
     const [top, mid, bot] = this.level.sky;
     this.sky = new Sky(scene, top, mid, bot);
@@ -301,27 +310,14 @@ class Game {
     this.carsPos = [];
     this.lives = 3; this.kos = 0; this.out = 0; this.gone = false; this.lastHitId = -1; this.lastHitT = -99; this.hitT = -99;
     this.spec = null; this.over = false; this.endIn = null; this.tRace = -9; this.floorY = 0; this.floorT = 0; this.focus = this.pos;
-    if (this.battle) {
-      this.car.regen = 16;
-      // נגיחה: מי שנכנס בי מהר מעיף אותי, ונרשם כמי שהפיל אותי אם אפול
-      this.car.body.addEventListener('collide', (e) => {
-        const r = e.body.remote;
-        if (!r || this.time - this.hitT < 0.3) return;
-        const b = this.car.body;
-        let nx = b.position.x - r.pos.x, nz = b.position.z - r.pos.z;
-        const l = Math.hypot(nx, nz) || 1;
-        nx /= l; nz /= l;
-        const closing = (r.nv.x - b.velocity.x) * nx + (r.nv.z - b.velocity.z) * nz, theirs = r.nv.x * nx + r.nv.z * nz;
-        if (closing < 4) return;
-        this.hitT = this.time;
-        if (theirs > 3) {
-          const k = Math.min(26, theirs * (r.boosting ? 1.0 : 0.7));
-          b.velocity.x += nx * k; b.velocity.z += nz * k; b.velocity.y += Math.min(7, k * 0.3);
-          this.lastHitId = r.id; this.lastHitT = this.time;
-        }
-        sfx.hit();
-      });
-    }
+    if (this.battle) { this.car.regen = 16; this.addHit(this.car.body, this); }
+    // "אני" בממשק של שחקן מרוחק – כדי שבוטים (ושרשרת) יתייחסו אליי כמו לכל מכונית אחרת
+    const self = this, mb = this.car.body;
+    this.meProxy = { id: net.myId, name: me.name, has: true, pos: this.phys, nv: mb.velocity, cv: mb.velocity, attach: new THREE.Vector3(),
+      get gone() { return self.gone; }, get lives() { return self.lives; }, get supported() { return self.car.supported; }, get boosting() { return self.car.boosting; } };
+    mb.remote = this.meProxy;
+    this.bots = []; this.rings = []; this.shake = 0; this.cele = null;
+    $('#banner').className = '';
     // קרח, הקפות ותיבות הפתעה
     this.car.grip = this.level.ice ? 0.3 : 1;
     this.laps = this.level.laps; this.lap = 0; this.item = 0; this.shieldT = 0; this.slipT = 0; this.oils = [];
@@ -348,8 +344,15 @@ class Game {
   syncPlayers() {
     const ids = new Set(net.players.map((p) => p.id));
     for (const [id, r] of this.remotes) if (!ids.has(id)) { r.dispose(this); this.remotes.delete(id); }
-    for (const p of net.players) if (p.id !== net.myId && !this.remotes.has(p.id)) this.remotes.set(p.id, new Remote(this, p));
     this.order = [...ids].sort((a, b) => a - b);
+    for (const p of net.players) if (p.id !== net.myId && !this.remotes.has(p.id)) {
+      // בוטים רצים אצל המארח; אצל שאר השחקנים הם נראים כמו כל שחקן מרוחק
+      const r = p.bot && net.isHost ? new Bot(this, p) : new Remote(this, p);
+      if (r.isBot && this.battle) this.addHit(r.body, r);
+      this.remotes.set(p.id, r);
+    }
+    this.bots = [...this.remotes.values()].filter((r) => r.isBot);
+    if (this.bots.length) this.car.body.collisionFilterMask |= G_CAR;
     this.slot = Math.max(0, this.order.indexOf(net.myId));
     this.neighbors = [this.order[this.slot - 1], this.order[this.slot + 1]].filter((x) => x !== undefined);
     for (const c of this.chains) c.vis.dispose();
@@ -373,6 +376,7 @@ class Game {
     this.lastRs = now;
     if (send) net.sendEvent({ k: 'rs' });
     this.respawn();
+    for (const b of this.bots) b.respawn(this);
     showMsg('חוזרים לנקודת הביקורת');
   }
 
@@ -388,7 +392,9 @@ class Game {
     if (this.battle) {
       if (this.out || this.over) { this.respawn(true); return; }
       this.lives--;
-      net.sendEvent({ k: 'ko', by: this.time - this.lastHitT < 6 ? this.lastHitId : -1 });
+      const by = this.time - this.lastHitT < 6 ? this.lastHitId : -1;
+      net.sendEvent({ k: 'ko', by });
+      this.onKo(net.myId, by);
       this.lastHitT = -99;
       if (this.lives <= 0) { this.out = Math.max(1, Math.round(this.tRace * 1000)); this.setGone(true); showMsg('הודחת מהזירה!', 2500); } else { this.respawn(true); showMsg(`נפלת! נשארו ${this.lives} חיים`); }
       return;
@@ -396,15 +402,105 @@ class Game {
     if (this.mode === 'chain') this.teamRespawn(true); else this.respawn();
   }
 
+  // נגיחה בקרב: מי שנכנס בי מהר מעיף אותי, ונרשם כמי שהפיל אותי אם אפול. self = אני או בוט
+  addHit(b, self) {
+    b.addEventListener('collide', (e) => {
+      const r = e.body.remote;
+      if (!r || r === self || this.time - self.hitT < 0.3) return;
+      let nx = b.position.x - r.pos.x, nz = b.position.z - r.pos.z;
+      const l = Math.hypot(nx, nz) || 1;
+      nx /= l; nz /= l;
+      const closing = (r.nv.x - b.velocity.x) * nx + (r.nv.z - b.velocity.z) * nz, theirs = r.nv.x * nx + r.nv.z * nz;
+      if (closing < 4) return;
+      self.hitT = this.time;
+      if (theirs > 3) {
+        const k = Math.min(26, theirs * (r.boosting ? 1.0 : 0.7));
+        b.velocity.x += nx * k; b.velocity.z += nz * k; b.velocity.y += Math.min(7, k * 0.3);
+        self.lastHitId = r.id; self.lastHitT = this.time;
+      }
+      if (self === this || r === this.meProxy) {
+        sfx.hit();
+        this.shake = Math.max(this.shake, Math.min(0.6, closing * 0.03));
+        this.burst(_v.set((b.position.x + r.pos.x) / 2, b.position.y + 0.3, (b.position.z + r.pos.z) / 2), 16, 9, [0xffffff, 0xffd21a], 0.35);
+      }
+    });
+  }
+
+  botFall(b) {
+    if (this.battle) {
+      if (b.out) return;
+      if (this.over) { b.respawn(this, true); return; }
+      const by = this.time - b.lastHitT < 6 ? b.lastHitId : -1;
+      b.lastHitT = -99; b.lives--;
+      net.sendEvent({ k: 'ko', by, who: b.id });
+      this.onKo(b.id, by);
+      if (b.lives <= 0) { b.out = Math.max(1, Math.round(this.tRace * 1000)); b.setGone(this, true); } else b.respawn(this, true);
+    } else if (this.mode === 'chain') this.teamRespawn(true);
+    else {
+      // בוט שנכשל שלוש פעמים באותו קטע מדלג לנקודת הביקורת הבאה, כדי שלא ייתקע לנצח
+      if (++b.fails >= 3 && b.cp < this.level.cps.length - 1) { b.cp++; b.fails = 0; }
+      b.respawn(this);
+    }
+  }
+
+  // נוקאאוט: מישהו עף מהזירה
+  onKo(who, by) {
+    const v = this.who(who), mine = who === net.myId, killer = this.who(by);
+    if (killer && killer.isBot) killer.kos++;
+    const at = mine ? this.phys : v && v.pos;
+    if (at) this.boom(at);
+    if (mine) banner('הועפת!', 'lose', 1500);
+    else if (by === net.myId) { this.kos++; sfx.ko(); banner('K.O!', 'ko', 1700); }
+    else showMsg(`${(v && v.name) || 'שחקן'} עף מהזירה${killer && killer.name ? ' – ' + killer.name : ''}`, 1500);
+  }
+
+  // ----- אפקטים: פיצוץ, גל הדף, קונפטי -----
+  burst(at, n, speed, colors, life = 0.7) {
+    for (let i = 0; i < n; i++) {
+      const u = Math.random() * 2 - 1, a = Math.random() * 6.283, s = Math.sqrt(1 - u * u), sp = speed * (0.4 + Math.random() * 0.8);
+      _v2.set(Math.cos(a) * s * sp, Math.abs(u) * sp + 2, Math.sin(a) * s * sp);
+      this.particles.emit(at, _v2, _tc.set(colors[i % colors.length]), life * (0.6 + Math.random() * 0.7), 2.4);
+    }
+  }
+  boom(pos) {
+    const at = new THREE.Vector3(pos.x, Math.max(pos.y, -3), pos.z);
+    this.burst(at, 90, 22, [0xff5a1f, 0xffd21a, 0xffffff, 0xff2d1a], 0.9);
+    for (const [col, k] of [[0xffb21a, 1], [0xffffff, 0.6]]) {
+      const mesh = new THREE.Mesh(new THREE.TorusGeometry(1, 0.12, 6, 40).rotateX(Math.PI / 2), new THREE.MeshBasicMaterial({ color: new THREE.Color(col).multiplyScalar(2.5), transparent: true, depthWrite: false }));
+      mesh.position.copy(at);
+      this.scene.add(mesh);
+      this.rings.push({ mesh, t: 0, k });
+    }
+    this.shake = Math.max(this.shake, clamp(1.2 - at.distanceTo(this.pos) / 60, 0.15, 1));
+    sfx.boom();
+  }
+  confetti(at, n) {
+    const cols = [0xff2d55, 0xffd21a, 0x22d38a, 0x1e7bff, 0xb14dff, 0xffffff];
+    for (let i = 0; i < n; i++) {
+      _v.set(at.x + (Math.random() - 0.5) * 9, at.y + 4 + Math.random() * 4, at.z + (Math.random() - 0.5) * 9);
+      _v2.set((Math.random() - 0.5) * 5, -2 - Math.random() * 4, (Math.random() - 0.5) * 5);
+      this.particles.emit(_v, _v2, _tc.set(cols[Math.floor(Math.random() * cols.length)]), 1 + Math.random() * 0.8, 2.2);
+    }
+  }
+  updateFx(dt) {
+    this.shake = Math.max(0, this.shake - dt * 2.2);
+    for (let i = this.rings.length - 1; i >= 0; i--) {
+      const r = this.rings[i];
+      r.t += dt;
+      const s = 1 + r.t * 34 * r.k;
+      r.mesh.scale.set(s, 1 + r.t * 3, s);
+      r.mesh.material.opacity = Math.max(0, 1 - r.t / 0.7);
+      if (r.t > 0.7) { r.mesh.geometry.dispose(); r.mesh.material.dispose(); r.mesh.removeFromParent(); this.rings.splice(i, 1); }
+    }
+    if (this.cele) this.confetti(this.focus, 3);
+  }
+
   onEvent(m) {
     if (m.k === 'rs' && this.mode === 'chain') this.teamRespawn(false);
     if (m.k === 'it') this.onItem(m);
     if (m.k === 'emo') this.remotes.get(m.from)?.vis.emote(EMOTES[m.i] || '👍');
     if (m.k === 'horn') sfx.horn(clamp(Math.round(m.h) || 1, 1, 4));
-    if (m.k === 'ko' && this.battle) {
-      const who = this.remotes.get(m.from)?.name || 'שחקן';
-      if (m.by === net.myId) { this.kos++; sfx.ko(); showMsg(`העפת את ${who}!`, 2000); } else showMsg(`${who} נפל מהזירה`, 1400);
-    }
+    if (m.k === 'ko' && this.battle) this.onKo(m.who ?? m.from, m.by);
   }
 
   emote(i) {
@@ -508,26 +604,35 @@ class Game {
 
   finishMatch() {
     this.over = true;
+    const st0 = this.standings(), won = !!st0[0]?.me && !(this.mode === 'vs' && !this.fin);
+    // חגיגה: המצלמה מקיפה את המנצח, קונפטי וכרזה
+    this.cele = { id: st0[0] ? st0[0].id : net.myId, a: this.camYaw + Math.PI };
+    this.spec = null;
+    if (won) { banner('ניצחון!', 'win', 3000); sfx.win(); } else { banner(st0.length > 1 ? `מקום ${st0.findIndex((x) => x.me) + 1}` : 'נגמר!', 'lose', 3000); sfx.lose(); }
     setTimeout(() => {
       if (game !== this) return;
       const st = this.standings(), place = st.findIndex((x) => x.me) + 1, n = st.length;
       if (n >= 2) {
-        // תגמול קטן בכוונה, ורק למנצח – כדי שלא ישתלם לחברים להפסיד בכוונה אחד לשני
-        const win = place === 1 && !(this.mode === 'vs' && !this.fin);
-        const dnf = this.mode === 'vs' && !this.fin;
-        this.credit = account.gain({ tr: dnf ? 0 : [3, 2, 1][place - 1] ?? 0, coins: win ? 4 : 0, xp: 30 + (n - place) * 15 });
-        this.credit.place = place;
+        // תגמול קטן בכוונה – כדי שלא ישתלם לחברים להפסיד בכוונה אחד לשני. מול בוטים בלבד אין גביעים
+        const humans = net.players.filter((pl) => !pl.bot).length >= 2;
+        const dnf = this.mode === 'vs' && !this.fin, win = place === 1 && !dnf;
+        this.credit = account.gain({ tr: humans && !dnf ? [3, 2, 1][place - 1] ?? 0 : 0, coins: humans && win ? 4 : 0, xp: 30 + (n - place) * 15 });
+        this.credit.place = place; this.credit.bots = !humans;
       }
       showResults();
-    }, 1300);
+    }, 3400);
   }
 
-  applyChain() {
-    const car = this.car, b = car.body;
+  who(id) { return id === net.myId ? this.meProxy : this.remotes.get(id); }
+  neighborsOf(id) { const i = this.order.indexOf(id); return i < 0 ? [] : [this.order[i - 1], this.order[i + 1]].filter((x) => x !== undefined); }
+
+  // כוח השרשרת על מכונית אחת (שלי, או של בוט שהמארח מריץ)
+  applyChain(car = this.car, id = net.myId) {
+    const b = car.body;
     let maxT = 0, lift = 0;
     b.quaternion.vmult(ATT, cr);
-    for (const nid of this.neighbors) {
-      const r = this.remotes.get(nid);
+    for (const nid of this.neighborsOf(id)) {
+      const r = this.who(nid);
       if (!r || !r.has) continue;
       const dx = r.attach.x - b.position.x - cr.x, dy = r.attach.y - b.position.y - cr.y, dz = r.attach.z - b.position.z - cr.z;
       const dist = Math.hypot(dx, dy, dz);
@@ -564,14 +669,14 @@ class Game {
       b.force.y += m * CP.gravity * lift - m * 2.2 * b.velocity.y * k;
       b.force.x -= m * 1.2 * b.velocity.x * k; b.force.z -= m * 1.2 * b.velocity.z * k;
     }
-    this.tension = maxT;
+    if (car === this.car) this.tension = maxT;
   }
 
-  progress() {
-    const cps = this.level.cps, cur = cps[this.cp].pos;
-    const next = this.cp + 1 < cps.length ? cps[this.cp + 1].pos : this.level.finish.pos;
+  progress(pos = this.phys, cp = this.cp, lap = this.lap) {
+    const cps = this.level.cps, cur = cps[cp].pos;
+    const next = cp + 1 < cps.length ? cps[cp + 1].pos : this.level.finish.pos;
     const total = cur.distanceTo(next) || 1;
-    return this.lap * 100000 + this.cp * 1000 + (clamp(total - this.phys.distanceTo(next), 0, total) / total) * 999;
+    return lap * 100000 + cp * 1000 + (clamp(total - pos.distanceTo(next), 0, total) / total) * 999;
   }
 
   standings() {
@@ -610,11 +715,15 @@ class Game {
       this.prevP.copy(body.position); this.prevQ.copy(body.quaternion);
       inp.jump = this.pendingJump; this.pendingJump = false;
       if (!this.gone) { car.step(H, inp, locked); if (car.didJump) sfx.jump(); }
+      this.meProxy.attach.set(0, 0.3, 0).applyQuaternion(_q.copy(body.quaternion)).add(body.position);
       if (this.mode === 'chain') this.applyChain();
+      for (const b of this.bots) b.step(H, tRace < 0 || (this.over && this.mode === 'vs'), this);
       this.world.step(H);
     }
     this.phys.copy(body.position);
     const p = this.phys;
+    for (const b of this.bots) b.post(dt, this, tRace, net);
+    this.updateFx(dt);
 
     // משטחי בוסט
     for (const pd of level.pads) {
@@ -645,6 +754,8 @@ class Game {
       sfx.finish();
       if (this.mode === 'race') {
         this.credit = account.finishRace(this.lvl, this.fin);
+        this.confetti(this.phys, 90);
+        banner(this.credit.newPb && !this.credit.first ? 'שיא חדש!' : 'סיימת!', 'win', 2000);
         showMsg((this.credit.newPb && !this.credit.first ? 'שיא חדש! ' : 'סיימת! ') + fmt(this.fin), 3000);
         setTimeout(() => { if (game === this) showResults(); }, 1500);
       } else if (this.mode === 'vs') showMsg('סיימת! ' + fmt(this.fin), 3000);
@@ -654,7 +765,9 @@ class Game {
       this.teamDone = true;
       this.teamTime = Math.max(this.fin, ...[...this.remotes.values()].map((r) => r.fin));
       // שלב בשרשרת נחשב רק כשמשחקים אותו לפחות שניים
-      if (this.remotes.size) this.credit = account.finishChain(this.lvl, this.teamTime, net.players.map((pl) => ({ name: pl.name, uid: pl.uid })));
+      if (this.remotes.size) this.credit = account.finishChain(this.lvl, this.teamTime, net.players.some((pl) => pl.bot) ? null : net.players.map((pl) => ({ name: pl.name, uid: pl.uid })));
+      this.confetti(this.phys, 90); sfx.win();
+      banner('עברתם יחד!', 'win', 2000);
       setTimeout(() => { if (game === this) showResults(); }, 1200);
     }
     // מירוץ חברים: נגמר כשכולם סיימו, או 45 שניות אחרי הראשון
@@ -729,6 +842,18 @@ class Game {
   }
 
   updateCamera(dt) {
+    if (this.cele) {
+      // חגיגת ניצחון: המצלמה מקיפה את המנצח
+      const w = this.cele.id === net.myId ? null : this.remotes.get(this.cele.id);
+      const C = (this.focus = w && w.has && !w.gone ? w.pos : this.pos);
+      this.cele.a += dt * 0.9;
+      camera.position.set(C.x + Math.sin(this.cele.a) * 9, C.y + 3.6, C.z + Math.cos(this.cele.a) * 9);
+      camera.lookAt(C.x, C.y + 1, C.z);
+      this.camPos.copy(camera.position);
+      camera.fov = this.fov = 58;
+      camera.updateProjectionMatrix();
+      return;
+    }
     const sr = this.spec != null ? this.remotes.get(this.spec) : null;
     const P = (this.focus = sr ? sr.pos : this.pos), Q = sr ? sr.quat : this.quat;
     const v = sr ? sr.nv : this.car.body.velocity, onGround = sr ? sr.supported : this.car.grounded >= 2;
@@ -744,6 +869,7 @@ class Game {
     this.camPos.z = P.z - cs * dist;
     this.camPos.y += (P.y + 3.5 - this.camPos.y) * (1 - Math.exp(-dt * 7));
     camera.position.copy(this.camPos);
+    if (this.shake > 0) { camera.position.x += (Math.random() - 0.5) * this.shake; camera.position.y += (Math.random() - 0.5) * this.shake; camera.position.z += (Math.random() - 0.5) * this.shake; }
     camera.lookAt(P.x + sn * 5, P.y + 1.3, P.z + cs * 5);
     this.fov += (62 + Math.min(24, sp * 0.5) - this.fov) * Math.min(1, dt * 4);
     camera.fov = this.fov;
@@ -798,6 +924,8 @@ class Game {
     sfx.engine(0, 0, false, false);
     sfx.musicStop();
     for (const bx of this.boxes) bx.mesh.material.dispose();
+    for (const r of this.rings) { r.mesh.geometry.dispose(); r.mesh.material.dispose(); }
+    $('#banner').className = '';
     for (const o of this.oils) { o.mesh.geometry.dispose(); o.mesh.material.dispose(); }
     this.shield.geometry.dispose(); this.shield.material.dispose();
     hud.item.classList.add('hidden');
@@ -1046,7 +1174,7 @@ function buildGarage() {
   colors('זוהר ניאון', 'glow');
   colors('שובל בוסט', 'trail');
   chips('אפקט שובל', 'tfx', TRAILS);
-  chips('צופר (מקש H)', 'horn', HORNS);
+  chips('צופר (מקש Tab)', 'horn', HORNS);
 }
 
 function openGarage(from) {
@@ -1060,7 +1188,8 @@ function openGarage(from) {
 function renderLobby() {
   $('#roomCode').textContent = net.offline ? 'אימון' : net.code;
   $('#btnCopy').classList.toggle('hidden', net.offline);
-  $('#players').innerHTML = net.players.map((p) => `<li><i style="background:${esc(p.skin?.color || '#fff')}"></i>${esc(p.name)}<em>${p.id === 0 ? 'מארח' : ''}${p.id === net.myId ? ' (אני)' : ''}</em></li>`).join('');
+  renderBots();
+  $('#players').innerHTML = net.players.map((p) => `<li><i style="background:${esc(p.skin?.color || '#fff')}"></i>${esc(p.name)}<em>${p.bot ? `בוט · רמה ${p.lvl}` : ''}${p.id === 0 ? 'מארח' : ''}${p.id === net.myId ? ' (אני)' : ''}</em></li>`).join('');
   if (net.offline && lobbyMode !== 'race') lobbyMode = 'race'; // שאר המצבים רק בחדר אמיתי
   document.querySelectorAll('.mode').forEach((b) => {
     const multi = b.dataset.mode !== 'race';
@@ -1103,6 +1232,22 @@ function renderLobby() {
   $('#levels').querySelectorAll('.tab').forEach((b) => (b.onclick = () => { lobbyLevel.vs = Number(b.dataset.cat) * 100 + 1; net.syncLobby(); }));
   $('#levels').querySelectorAll('.lv, .map').forEach((b) => (b.onclick = () => { lobbyLevel[lobbyMode] = Number(b.dataset.l); net.syncLobby(); }));
   if (renderLobby.last !== mode + sel) { renderLobby.last = mode + sel; $('#levels').querySelector('.on')?.scrollIntoView({ block: 'nearest' }); }
+}
+
+// בוטים: המארח מוסיף עד שלושה ובוחר לכל אחד רמת קושי 1–7
+function renderBots() {
+  const box = $('#bots');
+  if (!net.isHost || net.offline) { box.innerHTML = ''; return; }
+  const bots = net.bots, opts = (l) => [1, 2, 3, 4, 5, 6, 7].map((n) => `<option value="${n}" ${n === l ? 'selected' : ''}>רמה ${n}</option>`).join('');
+  box.innerHTML = bots.map((b) => `<div class="botRow"><span>🤖 ${esc(b.name)}</span><select data-id="${b.id}">${opts(b.lvl)}</select><button data-id="${b.id}" title="הסר">✕</button></div>`).join('')
+    + (bots.length < 3 && net.players.length < 8 ? '<button id="btnAddBot">+ הוסף בוט</button>' : '');
+  box.querySelectorAll('select').forEach((s) => (s.onchange = () => net.setBot(Number(s.dataset.id), Number(s.value))));
+  box.querySelectorAll('.botRow button').forEach((b) => (b.onclick = () => net.removeBot(Number(b.dataset.id))));
+  const add = $('#btnAddBot');
+  if (add) add.onclick = () => {
+    const used = new Set(net.players.map((p) => p.name)), i = BOT_NAMES.findIndex((n) => !used.has(n));
+    net.addBot(BOT_NAMES[Math.max(0, i)], botSkin(Math.max(0, i) + net.nextId), 4);
+  };
 }
 
 function enterLobby() {
@@ -1158,7 +1303,8 @@ function fillResults() {
     const col = (x) => esc(net.players.find((pl) => pl.id === x.id)?.skin?.color || '#19b5ff');
     const step = (i) => (st[i] ? `<div class="pd p${i + 1}${st[i].me ? ' me' : ''}"><u style="background:${col(st[i])}"></u><b>${esc(st[i].name)}</b><small>${val(st[i])}</small><i>${i + 1}</i></div>` : `<div class="pd p${i + 1} none"><i>${i + 1}</i></div>`);
     $('#resList').innerHTML = `<div class="podium">${step(1)}${step(0)}${step(2)}</div>` + st.slice(3).map((x, i) => `<li value="${i + 4}">${esc(x.name)}<span>${val(x)}</span></li>`).join('');
-    if (c) info = `<div class="pb">מקום ${c.place}</div><div class="xp" dir="ltr">+${c.tr} 🏆 · +${c.coins} 🪙 · +${c.xp} XP</div>` + (c.saved ? '' : '<small>נשמר בדפדפן הזה. הירשמו כדי להופיע בטבלת השיאים.</small>');
+    if (c && c.bots) info = `<div class="pb">מקום ${c.place}</div><div class="xp" dir="ltr">+${c.xp} XP</div><small>במשחק מול בוטים בלבד לא מקבלים גביעים ומטבעות.</small>`;
+    else if (c) info = `<div class="pb">מקום ${c.place}</div><div class="xp" dir="ltr">+${c.tr} 🏆 · +${c.coins} 🪙 · +${c.xp} XP</div>` + (c.saved ? '' : '<small>נשמר בדפדפן הזה. הירשמו כדי להופיע בטבלת השיאים.</small>');
   } else if (chain) {
     const done = st.every((x) => x.fin);
     $('#resTitle').textContent = done ? `שלב ${game.lvl} – עברתם יחד!` : 'תוצאות';

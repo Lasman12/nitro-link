@@ -82,6 +82,9 @@ export class Sfx {
     else if (i === 4) this.blip(1500, 0.45, 'sawtooth', 0.2, -1300);
     else if (i === 1) { this.blip(440, 0.38, 'square', 0.16); this.blip(554, 0.38, 'square', 0.16); }
   }
+  boom() { this.blip(110, 0.55, 'sawtooth', 0.4, -70); this.blip(55, 0.7, 'square', 0.3, -20); this.blip(1200, 0.08, 'square', 0.15, -800); }
+  lose() { [392, 330, 262, 196].forEach((f, i) => setTimeout(() => this.blip(f, 0.3, 'triangle', 0.2), i * 190)); }
+  win() { [523, 659, 784, 1046, 784, 1046, 1318].forEach((f, i) => setTimeout(() => this.blip(f, 0.22, 'square', 0.17), i * 120)); }
   hit() { this.blip(140, 0.22, 'sawtooth', 0.3, -90); this.blip(900, 0.06, 'square', 0.12); }
   ko() { [392, 523, 784].forEach((f, i) => setTimeout(() => this.blip(f, 0.16, 'square', 0.16), i * 80)); }
   coin() { this.blip(1320, 0.09, 'square', 0.12); setTimeout(() => this.blip(1760, 0.2, 'square', 0.12), 80); }

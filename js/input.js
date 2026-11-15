@@ -68,7 +68,7 @@ export class Input {
     s.roll = (k.has('KeyE') ? 1 : 0) - (k.has('KeyQ') ? 1 : 0);
     s.jump = this.pressed.has('Space') || this.pressed.has('TouchJump');
     s.respawn = this.pressed.has('KeyR');
-    this.horn = this.pressed.has('KeyH');
+    this.horn = this.pressed.has('Tab');
     this.item = this.pressed.has('ArrowDown') || this.pressed.has('KeyF') || this.pressed.has('TouchItem');
     this.next = this.pressed.has('Space') || this.pressed.has('TouchJump') || this.pressed.has('ArrowRight') || this.pressed.has('KeyD');
     s.jumpHeld = k.has('Space') || t.jump;

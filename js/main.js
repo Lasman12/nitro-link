@@ -6,7 +6,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { CarPhysics, CarVisual, carShape, addForce, P as CP, DEFAULT_SKIN, SKIN_OPTS, G_CAR, G_REMOTE } from './car.js';
-import { buildLevel, CHAIN_LEN, RACE_LEVELS, CHAIN_LEVELS, VS_MAPS, BATTLE_MAPS, VS_CATS, vsSplit, mapInfo, trackShape } from './level.js';
+import { buildLevel, CHAIN_LEN, RACE_LEVELS, CHAIN_LEVELS, VS_MAPS, BATTLE_MAPS, VS_CATS, MINI_CATS, vsSplit, miniSplit, mapInfo, trackShape } from './level.js';
 import { WRAPS, GRADS, FEATHERS, TRAILS, HORNS, ROAD, SHOP, SOURCE, itemName, itemSwatch } from './items.js';
 import { Account, rankOf, AuthError } from './account.js';
 import { Sky, Particles, ChainVisual, tex } from './fx.js';
@@ -262,7 +262,7 @@ function trailCol(vis, t) {
 class Game {
   constructor(mode, level, startAt) {
     this.mode = mode; this.startAt = startAt; this.credit = null; this.teamTime = 0;
-    this.isRace = mode === 'race' || mode === 'vs'; this.battle = mode === 'battle';
+    this.isRace = mode === 'race' || mode === 'vs'; this.battle = mode === 'battle' || mode === 'mini';
     this.gid = Math.round(startAt) % 1000000;
     const scene = (this.scene = new THREE.Scene());
     scene.environment = envTex;
@@ -275,7 +275,7 @@ class Game {
     world.addContactMaterial(new CANNON.ContactMaterial(this.carMat, kinMat, { friction: 0.05, restitution: 0.3 }));
     world.addContactMaterial(new CANNON.ContactMaterial(this.carMat, this.carMat, { friction: 0.05, restitution: 0.35 }));
 
-    this.level = buildLevel(mode, level, { scene, world, groundMat, kinMat, solo: net.players.filter((p) => !p.bot).length < 2 });
+    this.level = buildLevel(mode, level, { scene, world, groundMat, kinMat, seed: Math.round(startAt) % 1000000, solo: net.players.filter((p) => !p.bot).length < 2 });
     this.lvl = this.level.level;
     const [top, mid, bot] = this.level.sky;
     this.sky = new Sky(scene, top, mid, bot);
@@ -310,6 +310,19 @@ class Game {
     this.carsPos = [];
     this.lives = 3; this.kos = 0; this.out = 0; this.gone = false; this.lastHitId = -1; this.lastHitT = -99; this.hitT = -99;
     this.spec = null; this.over = false; this.endIn = null; this.tRace = -9; this.floorY = 0; this.floorT = 0; this.focus = this.pos;
+    // מיני גיימס: תופסת / כתר / רצפה נעלמת
+    this.mini = mode === 'mini' ? ['tag', 'crown', 'floor'][Math.floor(this.lvl / 100)] : null;
+    this.its = new Set(); this.tags = {}; this.tagT = {}; this.holder = -1; this.holdCd = 0; this.miniT = 0; this.noBoost = false; this.amIt = false; this.seenIt = false;
+    if (this.mini === 'floor') this.lives = 1;
+    if (this.mini === 'crown') {
+      const gold = new THREE.MeshStandardMaterial({ color: 0xffc933, metalness: 1, roughness: 0.25, emissive: 0xff9a1a, emissiveIntensity: 0.6 });
+      this.crown = new THREE.Group();
+      this.crown.add(new THREE.Mesh(new THREE.CylinderGeometry(0.9, 0.8, 0.5, 14, 1, true), gold));
+      for (let i = 0; i < 6; i++) { const c = new THREE.Mesh(new THREE.ConeGeometry(0.22, 0.6, 5), gold); c.position.set(Math.cos(i * 1.047) * 0.85, 0.5, Math.sin(i * 1.047) * 0.85); this.crown.add(c); }
+      this.crown.children[0].material.side = THREE.DoubleSide;
+      scene.add(this.crown);
+    }
+    hud.battle.className = this.mini ? 'mini' : '';
     if (this.battle) { this.car.regen = 16; this.addHit(this.car.body, this); }
     // "אני" בממשק של שחקן מרוחק – כדי שבוטים (ושרשרת) יתייחסו אליי כמו לכל מכונית אחרת
     const self = this, mb = this.car.body;
@@ -352,6 +365,7 @@ class Game {
       this.remotes.set(p.id, r);
     }
     this.bots = [...this.remotes.values()].filter((r) => r.isBot);
+    if (this.mini === 'floor') for (const r of this.remotes.values()) if (!r.has || r.isBot) r.lives = Math.min(r.lives, 1);
     if (this.bots.length) this.car.body.collisionFilterMask |= G_CAR;
     this.slot = Math.max(0, this.order.indexOf(net.myId));
     this.neighbors = [this.order[this.slot - 1], this.order[this.slot + 1]].filter((x) => x !== undefined);
@@ -390,7 +404,7 @@ class Game {
   fall() {
     sfx.fall();
     if (this.battle) {
-      if (this.out || this.over) { this.respawn(true); return; }
+      if (this.out || this.over || this.mini === 'tag' || this.mini === 'crown') { this.respawn(true); return; }
       this.lives--;
       const by = this.time - this.lastHitT < 6 ? this.lastHitId : -1;
       net.sendEvent({ k: 'ko', by });
@@ -428,6 +442,7 @@ class Game {
 
   botFall(b) {
     if (this.battle) {
+      if (this.mini === 'tag' || this.mini === 'crown') { b.respawn(this, true); return; }
       if (b.out) return;
       if (this.over) { b.respawn(this, true); return; }
       const by = this.time - b.lastHitT < 6 ? b.lastHitId : -1;
@@ -501,6 +516,7 @@ class Game {
     if (m.k === 'emo') this.remotes.get(m.from)?.vis.emote(EMOTES[m.i] || '👍');
     if (m.k === 'horn') sfx.horn(clamp(Math.round(m.h) || 1, 1, 4));
     if (m.k === 'ko' && this.battle) this.onKo(m.who ?? m.from, m.by);
+    if (m.k === 'mn' && this.mini && m.from === 0) this.onMini(m);
   }
 
   emote(i) {
@@ -591,9 +607,98 @@ class Game {
     }
   }
 
+  // ----- מיני גיימס: תופסת ותפוס את הכתר. המארח קובע מי התופסים ואצל מי הכתר, ומשדר לכולם -----
+  updateMini(dt, tRace) {
+    const all = [this.meProxy, ...this.remotes.values()].filter((o) => o.has && !o.gone);
+    const near = (a, c, d) => Math.hypot(a.pos.x - c.pos.x, a.pos.z - c.pos.z) < d && Math.abs(a.pos.y - c.pos.y) < 2.6;
+    if (net.isHost && tRace > 0 && !this.over) {
+      let changed = false;
+      if (this.mini === 'tag') {
+        if (!this.its.size) { this.its.add(this.order[Math.floor(Math.random() * this.order.length)]); changed = true; }
+        // נגיעה של תופס מדביקה; גם מי שנופל מהזירה נתפס
+        if (tRace > 5) for (const c of all) {
+          if (this.its.has(c.id)) continue;
+          let by = c.pos.y < -5 ? -1 : null;
+          if (by === null) for (const t of all) if (this.its.has(t.id) && this.time - (this.tagT[t.id] || -9) > 1.2 && near(t, c, 3.8)) { by = t.id; break; }
+          if (by === null) continue;
+          this.its.add(c.id); this.tagT[c.id] = this.time; changed = true;
+          if (by !== -1) this.tags[by] = (this.tags[by] || 0) + 1;
+        }
+      } else {
+        this.holdCd -= dt;
+        const C = this.level.crownPos, h = this.who(this.holder);
+        if (this.holder !== -1 && (!h || !h.has || h.gone || h.pos.y < -5)) { this.holder = -1; changed = true; } // נפל עם הכתר – חוזר למרכז
+        else if (this.holder === -1) { for (const c of all) if (Math.hypot(c.pos.x - C.x, c.pos.z - C.z) < 3.2 && Math.abs(c.pos.y - C.y) < 4.5) { this.holder = c.id; this.holdCd = 1.5; changed = true; break; } }
+        else if (this.holdCd <= 0) for (const c of all) if (c.id !== this.holder && near(c, h, 3.8)) { this.holder = c.id; this.holdCd = 1.5; changed = true; break; }
+      }
+      this.miniT -= dt;
+      if (changed || this.miniT <= 0) {
+        this.miniT = 1.5;
+        const m = { k: 'mn', its: [...this.its], tg: this.tags, h: this.holder };
+        net.sendEvent(m);
+        this.onMini(m);
+      }
+    }
+    const ms = Math.max(1, Math.round(tRace * 1000));
+    if (this.mini === 'tag') {
+      const it = this.its.has(net.myId);
+      this.car.speedMul = it ? 1.3 : 1; this.car.regen = it ? 30 : 16;
+      for (const b of this.bots) { const bi = this.its.has(b.id); b.car.speedMul = bi ? 1.3 : 1; if (bi && !b.out) b.out = ms; b.kos = this.tags[b.id] || 0; }
+      if (!this.over && tRace > 5 && this.its.size) {
+        const n = this.order.length, clean = this.order.filter((id) => !this.its.has(id)).length;
+        if (clean === 0 || (n >= 3 && clean <= 1) || tRace > 150) this.finishMatch();
+      }
+    } else {
+      const mine = this.holder === net.myId;
+      this.car.speedMul = mine ? 0.82 : 1; this.noBoost = mine;
+      let top = this.kos;
+      if (!this.over && tRace > 0 && mine) this.kos += dt * 10;
+      for (const b of this.bots) { const bh = this.holder === b.id; b.car.speedMul = bh ? 0.82 : 1; if (bh && !this.over && tRace > 0) b.kos += dt * 10; }
+      for (const r of this.remotes.values()) top = Math.max(top, r.kos);
+      if (!this.over && (top >= 600 || tRace > 180)) this.finishMatch();
+      // הכתר: מרחף במרכז, או מעל מי שמחזיק בו
+      const h = this.who(this.holder), C = this.level.crownPos;
+      if (h && h.has) this.crown.position.set(h.pos.x, h.pos.y + 2.5, h.pos.z); else this.crown.position.set(C.x, C.y + 0.4 + Math.sin(this.time * 3) * 0.25, C.z);
+      this.crown.rotation.y += dt * 2.5;
+    }
+  }
+  onMini(m) {
+    if (this.mini === 'tag') {
+      const was = this.amIt, first = !this.seenIt;
+      this.its = new Set(Array.isArray(m.its) ? m.its : []);
+      this.tags = m.tg && typeof m.tg === 'object' ? m.tg : {};
+      this.kos = Number(this.tags[net.myId]) || 0;
+      this.amIt = this.its.has(net.myId); this.seenIt = this.its.size > 0;
+      if (this.its.has(net.myId) && !was) {
+        this.out = Math.max(1, Math.round(this.tRace * 1000));
+        if (first) { banner('אתה התופס!', 'ko', 2000); sfx.ko(); } else { banner('נתפסת!', 'lose', 1800); this.boom(this.phys); }
+      } else if (first && this.its.size) { showMsg(`${this.who([...this.its][0])?.name || 'מישהו'} הוא התופס – ברחו!`, 2500); sfx.beep(true); }
+      this.vis.setMark(this.its.has(net.myId));
+      for (const r of this.remotes.values()) r.vis.setMark(this.its.has(r.id));
+    } else if (this.mini === 'crown') {
+      const prev = this.holder;
+      this.holder = Number.isInteger(m.h) ? m.h : -1;
+      if (this.holder !== prev && this.holder !== -1) { sfx.coin(); if (this.holder === net.myId) banner('הכתר אצלך!', 'win', 1400); else if (prev === net.myId) banner('חטפו לך את הכתר!', 'lose', 1400); }
+    }
+  }
+  // לאן בוט צריך לנסוע במיני גיימס (null = התנהגות קרב רגילה)
+  botGoal(b) {
+    if (!this.mini || this.mini === 'floor') return null;
+    const all = [this.meProxy, ...this.remotes.values()].filter((o) => o !== b && o.has && !o.gone && o.pos.y > -3);
+    const nearest = (ok) => { let best = null, bd = 1e9; for (const o of all) { if (!ok(o)) continue; const d = Math.hypot(o.pos.x - b.pos.x, o.pos.z - b.pos.z); if (d < bd) { bd = d; best = o; } } return best; };
+    if (this.mini === 'tag') {
+      if (this.its.has(b.id)) { const t = nearest((o) => !this.its.has(o.id)); return t ? { x: t.pos.x, z: t.pos.z } : null; }
+      const t = nearest((o) => this.its.has(o.id));
+      return t ? { x: t.pos.x, z: t.pos.z, flee: true } : { x: 0, z: 0 };
+    }
+    if (this.holder === b.id) { const t = nearest(() => true); return t ? { x: t.pos.x, z: t.pos.z, flee: true } : null; }
+    const h = this.who(this.holder);
+    return h && h.has ? { x: h.pos.x, z: h.pos.z } : { x: this.level.crownPos.x, z: this.level.crownPos.z };
+  }
+
   // צפייה: אחרי שסיימתי (או הודחתי) המצלמה עוברת לשחקנים שעדיין משחקים
   updateSpec() {
-    const can = (this.isRace && this.fin) || (this.battle && this.out);
+    const can = (this.isRace && this.fin) || (this.battle && this.out && this.mini !== 'tag');
     const list = can ? [...this.remotes.values()].filter((r) => r.has && !r.gone && (this.battle ? r.lives > 0 : !r.fin)) : [];
     if (!list.length) { this.spec = null; return false; }
     let i = list.findIndex((r) => r.id === this.spec);
@@ -680,6 +785,13 @@ class Game {
   }
 
   standings() {
+    if (this.mini === 'tag' || this.mini === 'crown') {
+      const list = [{ id: net.myId, name: me.name || 'אני', lives: 1, kos: Math.round(this.kos), out: this.out, me: true }];
+      for (const r of this.remotes.values()) list.push({ id: r.id, name: r.name, lives: 1, kos: Math.round(r.kos), out: r.out });
+      if (this.mini === 'crown') return list.sort((a, b) => b.kos - a.kos);
+      // תופסת: מי שלא נתפס ראשון; בין התופסים – מי שתפס יותר, ואז מי שנתפס מאוחר יותר
+      return list.sort((a, b) => (!a.out && !b.out ? 0 : !a.out ? -1 : !b.out ? 1 : b.kos - a.kos || b.out - a.out));
+    }
     if (this.battle) {
       const list = [{ id: net.myId, name: me.name || 'אני', lives: this.lives, kos: this.kos, out: this.out, me: true }];
       for (const r of this.remotes.values()) list.push({ id: r.id, name: r.name, lives: r.lives, kos: r.kos, out: r.lives > 0 ? 0 : r.out || 1 });
@@ -697,6 +809,7 @@ class Game {
     const inp = input.read();
     const spectating = this.updateSpec();
     const locked = tRace < 0 || spectating || (this.over && this.mode === 'vs');
+    if (this.noBoost) inp.boost = false;
     this.pendingJump ||= inp.jump;
     const car = this.car, body = car.body, level = this.level;
 
@@ -778,7 +891,8 @@ class Game {
       if (all || (this.endIn !== null && this.endIn <= 0)) this.finishMatch();
     }
     // קרב: נגמר כשנשאר שחקן אחד, או אחרי 4 דקות
-    if (this.battle && !this.over && tRace > 3) {
+    if (this.mini && this.mini !== 'floor') this.updateMini(dt, tRace);
+    else if (this.battle && !this.over && tRace > 3) {
       let alive = this.lives > 0 ? 1 : 0;
       for (const r of this.remotes.values()) if (r.lives > 0) alive++;
       if (alive <= (this.order.length >= 2 ? 1 : 0) || tRace > 240) this.finishMatch();
@@ -829,7 +943,7 @@ class Game {
     if (this.sendT <= 0) {
       this.sendT = 1 / 30;
       const q = body.quaternion, v = body.velocity, r2 = (x) => Math.round(x * 100) / 100, r3 = (x) => Math.round(x * 1000) / 1000;
-      net.sendState([r2(p.x), r2(p.y), r2(p.z), r3(q.x), r3(q.y), r3(q.z), r3(q.w), r2(v.x), r2(v.y), r2(v.z), (car.boosting ? 1 : 0) | (car.supported ? 0 : 2) | (this.gone ? 4 : 0), this.battle ? this.lives : this.cp, this.battle ? this.kos : Math.round(this.progress()), this.battle ? this.out : this.fin, this.gid]);
+      net.sendState([r2(p.x), r2(p.y), r2(p.z), r3(q.x), r3(q.y), r3(q.z), r3(q.w), r2(v.x), r2(v.y), r2(v.z), (car.boosting ? 1 : 0) | (car.supported ? 0 : 2) | (this.gone ? 4 : 0), this.battle ? this.lives : this.cp, this.battle ? Math.round(this.kos) : Math.round(this.progress()), this.battle ? this.out : this.fin, this.gid]);
     }
 
     this.updateHud(dt, tRace, speed);
@@ -885,7 +999,8 @@ class Game {
       hud.count.textContent = c > 3 ? '' : c > 0 ? c : 'צא!';
       if (c >= 0 && c <= 3) sfx.beep(c === 0);
     }
-    hud.timer.textContent = this.battle ? fmt(clamp(240 - tRace, 0, 240) * 1000).slice(0, 4) : fmt(this.fin || Math.max(0, tRace * 1000));
+    const cap = this.mini === 'tag' ? 150 : this.mini === 'crown' ? 180 : 240;
+    hud.timer.textContent = this.battle ? fmt(clamp(cap - tRace, 0, cap) * 1000).slice(0, 4) : fmt(this.fin || Math.max(0, tRace * 1000));
     hud.nitroFill.style.width = `${this.car.boost.toFixed(0)}%`;
     hud.nitro.classList.toggle('low', this.car.boost < 12);
     hud.nitro.classList.toggle('on', this.car.boosting);
@@ -903,6 +1018,20 @@ class Game {
       hud.info.textContent = sr ? `👁 צופה ב־${sr.name}${this.remotes.size > 1 ? ' · רווח / A להחלפה' : ''}`
         : this.laps && !this.fin ? `הקפה ${Math.min(this.laps, this.lap + 1)} / ${this.laps}${this.endIn !== null && !this.over ? ` · נגמר בעוד ${Math.max(0, Math.ceil(this.endIn))} שנ'` : ''}`
         : this.mode === 'vs' && this.endIn !== null && !this.fin && !this.over ? `המירוץ נגמר בעוד ${Math.max(0, Math.ceil(this.endIn))} שנ'` : '';
+      if (this.mini) {
+        const el = hud.battle, nameOf = (id) => (id === net.myId ? 'אצלך' : 'אצל ' + (this.remotes.get(id)?.name || '…'));
+        if (this.mini === 'tag') {
+          const it = this.its.has(net.myId), clean = this.order.filter((id) => !this.its.has(id)).length;
+          el.innerHTML = `<b>${!this.its.size ? 'מתכוננים…' : it ? 'אתה התופס! תפוס את כולם' : 'ברח מהתופסים!'}</b><small>נשארו ${clean} חופשיים${it ? ` · תפסת ${this.kos}` : ''}</small>`;
+          el.classList.toggle('hot', it);
+        } else if (this.mini === 'crown') {
+          el.innerHTML = `<b>👑 ${this.holder === -1 ? 'הכתר חופשי – רוצו אליו!' : 'הכתר ' + nameOf(this.holder)}</b><small>הנקודות שלך: ${Math.floor(this.kos / 10)} / 60</small>`;
+          el.classList.toggle('gold', this.holder === net.myId);
+        } else el.innerHTML = `<b>${this.out ? 'נפלת!' : 'הרצפה נעלמת – הישארו למעלה'}</b><small>נשארו ${st.filter((x) => !x.out).length} שחקנים</small>`;
+        hud.board.innerHTML = st.map((x, i) => `<li class="${x.me ? 'me' : ''}">${i + 1}. ${esc(x.name)}<span>${this.mini === 'crown' ? Math.floor(x.kos / 10) : this.mini === 'tag' ? (x.out ? '🔴 ' + x.kos : '🟢') : x.out ? '✖' : '🟢'}</span></li>`).join('');
+        if (!$('#results').classList.contains('hidden')) fillResults();
+        return;
+      }
       if (this.battle) {
         hud.battle.innerHTML = `<b>${'❤'.repeat(Math.max(0, this.lives))}<s>${'❤'.repeat(3 - Math.max(0, this.lives))}</s></b><small>הפלות: ${this.kos}</small>`;
         hud.board.innerHTML = st.map((x, i) => `<li class="${x.me ? 'me' : ''}">${i + 1}. ${esc(x.name)}<span>${x.out ? '✖' : '❤'.repeat(Math.max(0, x.lives))} · ${x.kos}</span></li>`).join('');
@@ -925,6 +1054,8 @@ class Game {
     sfx.musicStop();
     for (const bx of this.boxes) bx.mesh.material.dispose();
     for (const r of this.rings) { r.mesh.geometry.dispose(); r.mesh.material.dispose(); }
+    if (this.crown) this.crown.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); });
+    hud.battle.className = 'hidden';
     $('#banner').className = '';
     for (const o of this.oils) { o.mesh.geometry.dispose(); o.mesh.material.dispose(); }
     this.shield.geometry.dispose(); this.shield.material.dispose();
@@ -936,10 +1067,11 @@ class Game {
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const showroom = new Showroom();
 let game = null, currentGame = null, lobbyMode = 'race', screen = 'menu', garageFrom = 'menu';
-const lobbyLevel = { race: 1, chain: 1, vs: 1, battle: 1 };
-const MAXL = { race: RACE_LEVELS, chain: CHAIN_LEVELS, vs: VS_MAPS, battle: BATTLE_MAPS };
+const lobbyLevel = { race: 1, chain: 1, vs: 1, battle: 1, mini: 1 };
+const MAXL = { race: RACE_LEVELS, chain: CHAIN_LEVELS, vs: VS_MAPS, battle: BATTLE_MAPS, mini: 399 };
+const CATS = { vs: VS_CATS, mini: MINI_CATS }, SPLIT = { vs: vsSplit, mini: miniSplit };
 const maxLevel = (mode) => MAXL[mode] || 1;
-const isMaps = (mode) => mode === 'vs' || mode === 'battle'; // מצבים עם מפות פתוחות (בלי התקדמות)
+const isMaps = (mode) => mode === 'vs' || mode === 'battle' || mode === 'mini'; // מצבים עם מפות פתוחות (בלי התקדמות)
 const unlocked = (mode) => (isMaps(mode) ? maxLevel(mode) : Math.min(maxLevel(mode), (account.profile[mode] || 0) + 1));
 
 // תמונת תצוגה מקדימה של מפה: המסלול מלמעלה
@@ -1216,8 +1348,8 @@ function renderLobby() {
     const info = mapInfo(mode, sel);
     $('#levelsTitle').textContent = `${mode === 'battle' ? 'זירה' : 'מפה'}: ${info.name}${info.size ? ' · ' + info.size : ''}`;
     // מירוץ חברים: לשוניות של תת-קטגוריות, ובכל אחת המפות שלה
-    const [cat] = mode === 'vs' ? vsSplit(sel) : [0], base = cat * 100, count = mode === 'vs' ? VS_CATS[cat].count : maxLevel(mode);
-    if (mode === 'vs') html += '<div class="tabs">' + VS_CATS.map((c, k) => `<button class="tab${k === cat ? ' on' : ''}" data-cat="${k}" ${net.isHost ? '' : 'disabled'}>${c.n}</button>`).join('') + '</div>';
+    const cats = CATS[mode], [cat] = cats ? SPLIT[mode](sel) : [0], base = cat * 100, count = cats ? cats[cat].count : maxLevel(mode);
+    if (cats) html += '<div class="tabs">' + cats.map((c, k) => (mode === 'vs' && k === 2 ? '' : `<button class="tab${k === cat ? ' on' : ''}" data-cat="${k}" ${net.isHost ? '' : 'disabled'}>${c.n}</button>`)).join('') + '</div>';
     for (let i = 1; i <= count; i++) {
       const inf = mapInfo(mode, base + i);
       if (mode === 'vs' && cat === 0 && i % 10 === 1) html += `<h4>מסלולים ${['קצרים', 'בינוניים', 'ארוכים'][(i - 1) / 10]}</h4>`;
@@ -1229,7 +1361,7 @@ function renderLobby() {
   }
   $('#levels').className = maps ? 'maps' : '';
   $('#levels').innerHTML = html;
-  $('#levels').querySelectorAll('.tab').forEach((b) => (b.onclick = () => { lobbyLevel.vs = Number(b.dataset.cat) * 100 + 1; net.syncLobby(); }));
+  $('#levels').querySelectorAll('.tab').forEach((b) => (b.onclick = () => { lobbyLevel[lobbyMode] = Number(b.dataset.cat) * 100 + 1; net.syncLobby(); }));
   $('#levels').querySelectorAll('.lv, .map').forEach((b) => (b.onclick = () => { lobbyLevel[lobbyMode] = Number(b.dataset.l); net.syncLobby(); }));
   if (renderLobby.last !== mode + sel) { renderLobby.last = mode + sel; $('#levels').querySelector('.on')?.scrollIntoView({ block: 'nearest' }); }
 }
@@ -1270,8 +1402,11 @@ function startGame(mode, level, startAt) {
 function hostStart(mode, level) {
   if (!net.isHost) return;
   if (mode !== 'race' && (net.offline || net.players.length < 2)) { toast('המצב הזה דורש חדר עם שני שחקנים לפחות'); toLobby(); return; }
+  // מירוצי הקרח שייכים למיני גיימס, אבל בפועל הם מירוץ חברים רגיל על מסלול קרח
+  if (mode === 'vs' && Math.floor(level / 100) === 2) { mode = 'mini'; level = 300 + (level % 100); }
   level = clamp(level, 1, maxLevel(mode));
   lobbyMode = mode; lobbyLevel[mode] = level;
+  if (mode === 'mini' && Math.floor(level / 100) === 3) { mode = 'vs'; level = 200 + (level % 100); }
   const startAt = net.now() + 4200;
   currentGame = { mode, level, startAt };
   net.hostCmd({ t: 'start', mode, level, startAt });
@@ -1298,8 +1433,8 @@ function fillResults() {
   let info = '';
   if (maps) {
     // פודיום לשלושת הראשונים
-    $('#resTitle').textContent = game.battle ? 'הקרב נגמר!' : `${mapInfo('vs', game.lvl).name} – תוצאות`;
-    const val = (x) => (game.battle ? `${x.kos} הפלות` : x.fin ? fmt(x.fin) : 'לא סיים');
+    $('#resTitle').textContent = game.mini ? `${mapInfo('mini', game.lvl).size} – תוצאות` : game.battle ? 'הקרב נגמר!' : `${mapInfo('vs', game.lvl).name} – תוצאות`;
+    const val = (x) => (game.mini === 'crown' ? `${Math.floor(x.kos / 10)} נק'` : game.mini === 'tag' ? (x.out ? `נתפס · תפס ${x.kos}` : 'לא נתפס!') : game.mini === 'floor' ? (x.out ? fmt(x.out) : 'שרד!') : game.battle ? `${x.kos} הפלות` : x.fin ? fmt(x.fin) : 'לא סיים');
     const col = (x) => esc(net.players.find((pl) => pl.id === x.id)?.skin?.color || '#19b5ff');
     const step = (i) => (st[i] ? `<div class="pd p${i + 1}${st[i].me ? ' me' : ''}"><u style="background:${col(st[i])}"></u><b>${esc(st[i].name)}</b><small>${val(st[i])}</small><i>${i + 1}</i></div>` : `<div class="pd p${i + 1} none"><i>${i + 1}</i></div>`);
     $('#resList').innerHTML = `<div class="podium">${step(1)}${step(0)}${step(2)}</div>` + st.slice(3).map((x, i) => `<li value="${i + 4}">${esc(x.name)}<span>${val(x)}</span></li>`).join('');

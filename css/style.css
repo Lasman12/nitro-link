@@ -354,3 +354,8 @@ body.touch #emotes { top: 130px; right: 14px; }
   #mapPanel { order: 2; }
   #mapPanel #levels, #mapPanel #levels.maps { max-height: 46vh; }
 }
+
+#modes .mode:last-child:nth-child(odd) { grid-column: 1 / -1; }
+#battleHud.mini b { font-size: 17px; color: #fff; letter-spacing: 0; }
+#battleHud.mini.hot { border-color: #ff3355; box-shadow: 0 0 22px rgba(255, 51, 85, .6); }
+#battleHud.mini.gold { border-color: #ffd21a; box-shadow: 0 0 22px rgba(255, 210, 26, .6); }

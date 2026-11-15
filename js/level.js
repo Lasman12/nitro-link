@@ -40,6 +40,10 @@ function themeFor(base, k) {
 export const RACE_LEVELS = 30, CHAIN_LEVELS = 20, VS_MAPS = 399, BATTLE_MAPS = 4;
 // תת-קטגוריות של מירוץ החברים. מספר המפה מקודד: קטגוריה * 100 + מספר
 export const VS_CATS = [{ n: 'רגיל', count: 30 }, { n: 'ארוך ומפותל', count: 6 }, { n: 'קרח', count: 6 }, { n: 'קארט · 3 הקפות', count: 6 }];
+// מיני גיימס: תופסת, תפוס את הכתר, הרצפה נעלמת – וגם מירוצי הקרח
+export const MINI_CATS = [{ n: 'תופסת', count: 2 }, { n: 'תפוס את הכתר', count: 2 }, { n: 'הרצפה נעלמת', count: 2 }, { n: 'קרח', count: 6 }];
+export const miniSplit = (level) => { const c = Math.max(0, Math.min(3, Math.floor(level / 100))); return [c, Math.max(1, Math.min(MINI_CATS[c].count, level % 100))]; };
+const MINI_NAMES = [['שדה ענק', 'מגרש המכשולים'], ['מלך הגבעה', 'המגדל'], ['81 אריחים', '49 אריחים']];
 export const vsSplit = (level) => { const c = Math.max(0, Math.min(3, Math.floor(level / 100))); return [c, Math.max(1, Math.min(VS_CATS[c].count, level % 100))]; };
 const ONE = new THREE.Vector3(1, 1, 1), UP = new THREE.Vector3(0, 1, 0);
 const hdr = (hex, k = 2.3) => new THREE.Color(hex).multiplyScalar(k);
@@ -442,6 +446,7 @@ class Builder {
         for (const k in mats) mats[k].dispose();
         for (const b of buttons) b.mesh.material.dispose();
         for (const c of cps) c.mesh?.material.dispose();
+        for (const d of dyn) if (d.mesh.material && !Object.values(mats).includes(d.mesh.material)) d.mesh.material.dispose();
         group.removeFromParent();
       },
     };
@@ -862,6 +867,52 @@ function genChain(b, L) {
 // שלב 10 במירוץ ושלב 6 בשרשרת הם המסלולים המקוריים שנבנו ידנית
 const HAND_RACE = 10, HAND_CHAIN = 6;
 
+// תופסת: זירה ענקית מוקפת חומה, עם מכשולים להתחמק מאחוריהם
+function genTag(b, i) {
+  const S = 170, r = rng(i * 1777 + 3);
+  plat(b, 0, 0, S, S);
+  for (const s of [-1, 1]) { put(b, 0, s * (S / 2 - 0.4)); b.wall(0, 0, [S, 3, 0.8]); put(b, s * (S / 2 - 0.4), 0); b.wall(0, 0, [0.8, 3, S]); }
+  const n = i === 1 ? 26 : 16;
+  for (let k = 0; k < n; k++) {
+    const x = (r() - 0.5) * (S - 24), z = (r() - 0.5) * (S - 24);
+    if (Math.abs(Math.hypot(x, z) - 55) < 9) continue; // לא על מעגל הזינוק
+    put(b, x, z, r() * 3);
+    if (i === 1 || k % 2) b.block(0, 0, [4 + r() * 9, 4.5, 3 + r() * 5], 'wall'); else b.block(0, 0, [14, 1.2, 14], 'ramp');
+  }
+  for (let k = 0; k < 10; k++) { const a = r() * 6.28, d = 40 + r() * 35; put(b, Math.sin(a) * d, Math.cos(a) * d, r() * 6.28); b.pad(0, 0); }
+  b.R = 55;
+  put(b, 0, 0);
+  b.cps.push(b.zone(0, 20));
+  b.finish = b.zone(0, 1);
+}
+
+// הרצפה נעלמת: רשת אריחים שנופלים בזה אחר זה בסדר קבוע (לפי seed), כך שכל השחקנים רואים אותו דבר
+function genFloor(b, i, seed) {
+  const N = i === 1 ? 9 : 7, T = 9, half = (N * T) / 2, r = rng(seed * 31 + i), order = [];
+  for (let k = 0; k < N * N; k++) order.push(k);
+  for (let k = order.length - 1; k > 0; k--) { const j = Math.floor(r() * (k + 1)); [order[k], order[j]] = [order[j], order[k]]; }
+  const gap = i === 1 ? 1.1 : 1.5, q = new THREE.Quaternion();
+  order.forEach((cell, rank) => {
+    const x = (cell % N) * T - half + T / 2, z = Math.floor(cell / N) * T - half + T / 2, at = 8 + rank * gap;
+    b.segs.push({ x, z, yaw: 0, w: T - 0.6, len: T - 0.6 });
+    if (b.dry) return;
+    const mat = b.mats.floor.clone();
+    mat.emissive = new THREE.Color(0xff2d1a); mat.emissiveIntensity = 0;
+    const mesh = new THREE.Mesh(boxGeo(T - 0.4, 1, T - 0.4), mat), base = new THREE.Vector3(x, -0.5, z);
+    b.kin(mesh, [{ size: [T - 0.4, 1, T - 0.4] }], (t, p, qq) => {
+      const d = t - at;
+      p.copy(base);
+      if (d > 0) p.y -= Math.min(80, d * d * 14);
+      mat.emissiveIntensity = d > -1.8 && d <= 0 ? 0.5 + 0.5 * Math.sin(t * 22) : d > 0 ? 1 : 0; // מהבהב באדום לפני הנפילה
+      qq.copy(q);
+    });
+  });
+  b.R = half * 0.55;
+  put(b, 0, 0);
+  b.cps.push(b.zone(0, 20));
+  b.finish = b.zone(0, 1);
+}
+
 function make(mode, level, ctx) {
   let L = Math.round(level) || 1, b;
   if (mode === 'chain') {
@@ -875,6 +926,14 @@ function make(mode, level, ctx) {
     else if (c === 2) { b = new Builder(ctx, { ...themeFor(TH[3], i), decor: DECOR[i % DECOR.length] }); genIce(b, i); }
     else if (c === 3) { b = new Builder(ctx, themeFor(TH[(i * 3) % TH.length], i + 3)); genKart(b, i); }
     else { b = new Builder(ctx, themeFor(TH[(i * 3 + 1) % TH.length], i + 2)); genVs(b, i); }
+  } else if (mode === 'mini') {
+    const [c, i] = miniSplit(L);
+    L = c * 100 + i;
+    if (c === 3) return make('vs', 200 + i, ctx);
+    b = new Builder(ctx, themeFor(TH[[5, 8, 6][c]], i + c * 2), { arena: true });
+    if (c === 0) genTag(b, i);
+    else if (c === 1) { genArena(b, i === 1 ? 1 : 4); b.R = ARENAS[i === 1 ? 0 : 3].R; b.crownPos = new THREE.Vector3(0, i === 1 ? 2.6 : 4, 0); }
+    else genFloor(b, i, ctx.seed || 1);
   } else if (mode === 'battle') {
     L = clamp(L, 1, BATTLE_MAPS);
     b = new Builder(ctx, themeFor(TH[[2, 6, 1, 8][L - 1]], L), { arena: true });
@@ -892,8 +951,9 @@ export function buildLevel(mode, level, ctx) {
   const lv = b.build();
   lv.level = L;
   lv.ice = !!b.ice; lv.laps = b.laps || 0; lv.boxes = b.boxes || [];
-  if (mode === 'battle') {
-    const R = ARENAS[L - 1].R;
+  lv.crownPos = b.crownPos || null;
+  if (b.arena) {
+    const R = b.R || ARENAS[L - 1].R;
     lv.finish.pos.y = -1e6;
     lv.killY = -16;
     lv.spawn = (i, slot, count = 1) => {
@@ -907,6 +967,7 @@ export function buildLevel(mode, level, ctx) {
 // שם ואורך של מפה (ללובי)
 export function mapInfo(mode, level) {
   if (mode === 'battle') return { name: ARENAS[clamp(level, 1, BATTLE_MAPS) - 1].n, size: '' };
+  if (mode === 'mini') { const [mc, mi] = miniSplit(level); return mc === 3 ? { name: `קרח ${mi}`, size: 'מירוץ חלקלק' } : { name: MINI_NAMES[mc][mi - 1], size: MINI_CATS[mc].n }; }
   const [c, i] = vsSplit(level);
   if (c === 1) return { name: `פיתולים ${i}`, size: 'ארוך' };
   if (c === 2) return { name: `קרח ${i}`, size: 'חלקלק' };
@@ -918,5 +979,5 @@ export function mapInfo(mode, level) {
 export function trackShape(mode, level) {
   const { b } = make(mode, level, { dry: true, solo: true });
   const css = (hex) => '#' + new THREE.Color(hex).getHexString();
-  return { segs: b.segs, start: b.cps[0].pos, finish: mode === 'battle' ? null : b.finish.pos, floor: css(b.T.floor), trim: css(b.T.trimA), sky: css(b.T.sky[1]) };
+  return { segs: b.segs, start: b.cps[0].pos, finish: b.arena ? null : b.finish.pos, floor: css(b.T.floor), trim: css(b.T.trimA), sky: css(b.T.sky[1]) };
 }

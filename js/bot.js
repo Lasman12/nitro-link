@@ -189,8 +189,14 @@ export class Bot {
       const d = Math.hypot(o.pos.x - p.x, o.pos.z - p.z);
       if (d < bd && o.pos.y > -3) { bd = d; tx = o.pos.x + (o.nv.x || 0) * 0.3 * k; tz = o.pos.z + (o.nv.z || 0) * 0.3 * k; }
     };
-    consider(game.meProxy);
-    for (const r of game.remotes.values()) consider(r);
+    // במיני גיימס יש לבוט מטרה משלו: לרדוף אחרי מישהו, ללכת לכתר, או לברוח
+    const goal = game.botGoal(this);
+    let flee = false;
+    if (goal) {
+      bd = Math.hypot(goal.x - p.x, goal.z - p.z);
+      flee = !!goal.flee;
+      if (flee) { tx = p.x + (p.x - goal.x) * 4; tz = p.z + (p.z - goal.z) * 4; } else { tx = goal.x; tz = goal.z; }
+    } else { consider(game.meProxy); for (const r of game.remotes.values()) consider(r); }
     _f.set(0, 0, 1).applyQuaternion(_q.set(b.quaternion.x, b.quaternion.y, b.quaternion.z, b.quaternion.w));
     // שפת הזירה: אם אין רצפה לפניי – חוזרים למרכז
     const ahead = 4 + speed * (0.55 - 0.2 * k);
@@ -217,7 +223,7 @@ export class Bot {
     const want = edge ? 7 : lerp(11, 34, k) * (1 - 0.5 * Math.min(1, Math.abs(diff)));
     inp.throttle = edge && speed > 9 ? -1 : speed < want ? 1 : 0;
     if (Math.abs(diff) > 2.2 && speed < 4) inp.throttle = -1;
-    inp.boost = !edge && this.lvl >= 3 && bd < 10 + 22 * k && Math.abs(diff) < 0.2 && this.car.boost > 15;
+    inp.boost = !edge && this.lvl >= 3 && bd < 10 + 22 * k && Math.abs(diff) < (flee ? 0.6 : 0.2) && this.car.boost > 15 && game.holder !== this.id;
     this.unstick();
     this.jumpIf(wantJump, v, null);
   }

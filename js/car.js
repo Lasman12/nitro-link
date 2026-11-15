@@ -47,7 +47,7 @@ export class CarPhysics {
       [P.wheelX, P.wheelZf, true], [-P.wheelX, P.wheelZf, true],
       [P.wheelX, P.wheelZr, false], [-P.wheelX, P.wheelZr, false],
     ].map(([x, z, front]) => ({ local: new CANNON.Vec3(x, P.mountY, z), front, len: RAY - 0.13, hit: false }));
-    this.steer = 0; this.spin = 0; this.boost = 100; this.regen = 9; this.grip = 1;
+    this.steer = 0; this.spin = 0; this.boost = 100; this.regen = 9; this.grip = 1; this.speedMul = 1;
     this.grounded = 0; this.airT = 0; this.jumpT = 1; this.jumped = false; this.airJumps = 1;
     this.boosting = false; this.flipT = 0; this.didJump = false; this.jumpBuf = 0; this.holdT = 0; this.supported = true;
   }
@@ -119,13 +119,13 @@ export class CarPhysics {
           let Fd;
           if (th !== 0) {
             if (th * vfw >= 0 || Math.abs(vfw) < 1.5) {
-              const lim = th > 0 ? (this.boosting ? P.boostSpeed : P.maxSpeed) : P.reverse;
+              const lim = (th > 0 ? (this.boosting ? P.boostSpeed : P.maxSpeed) : P.reverse) * this.speedMul;
               const a = Math.abs(vfw);
-              Fd = th * P.engine * (a < lim * 0.75 ? 1 : Math.max(0, (lim - a) / (lim * 0.25)));
+              Fd = th * P.engine * this.speedMul * (a < lim * 0.75 ? 1 : Math.max(0, (lim - a) / (lim * 0.25)));
             } else Fd = th * P.brake * (0.4 + 0.6 * this.grip);
           } else Fd = Math.abs(vfw) < 3 ? clamp(-vfw * 20, -25, 25) : -vfw * 0.5; // בלי גז ובמהירות נמוכה – בלם חניה, כדי שלא ייגרר
           if (locked) Fd = -vfw * 8;
-          if (!this.boosting && Math.abs(vfw) > P.maxSpeed + 1) Fd -= Math.sign(vfw) * 5;
+          if (!this.boosting && Math.abs(vfw) > P.maxSpeed * this.speedMul + 1) Fd -= Math.sign(vfw) * 5;
           Fd *= P.mass / 4;
           F.set(wf.x * Fd + ws.x * Fl, wf.y * Fd + ws.y * Fl, wf.z * Fd + ws.z * Fl);
           r.vadd(up.scale(-0.1 - P.mountY, tmp), rApp);
@@ -170,7 +170,7 @@ export class CarPhysics {
 
     // בוסט
     if (this.boosting) {
-      const f = clamp((P.boostSpeed + 2 - vel.dot(fwd)) / 6, 0, 1);
+      const f = clamp((P.boostSpeed * this.speedMul + 2 - vel.dot(fwd)) / 6, 0, 1);
       b.force.vadd(fwd.scale(P.mass * P.boostAcc * f, tmp), b.force);
       this.boost = Math.max(0, this.boost - 28 * dt);
     } else if (grounded >= 2 && !inp.boost) this.boost = Math.min(100, this.boost + this.regen * dt);
@@ -574,6 +574,15 @@ export class CarVisual {
     sp.scale.set(3.4, 0.85, 1);
     sp.position.y = 2.2;
     this.group.add(sp);
+  }
+
+  // סימון מעל המכונית (למשל "התופס" בתופסת)
+  setMark(on) {
+    if (!!this.mark === !!on) return;
+    if (this.mark) { this.mark.geometry.dispose(); this.mark.material.dispose(); this.mark.removeFromParent(); this.mark = null; return; }
+    this.mark = new THREE.Mesh(new THREE.ConeGeometry(0.6, 1.2, 4).rotateX(Math.PI), new THREE.MeshBasicMaterial({ color: hdr(0xff1a2e, 3) }));
+    this.mark.position.y = 3.2;
+    this.group.add(this.mark);
   }
 
   // אימוג'י שצף מעל המכונית לכמה שניות

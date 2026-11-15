@@ -336,3 +336,21 @@ body.touch #emotes { top: 130px; right: 14px; }
   30%, 82% { opacity: 1; transform: translate(-50%, -50%) scale(1) rotate(-4deg); }
   100% { opacity: 0; transform: translate(-50%, -80%) scale(1.15) rotate(-4deg); }
 }
+
+/* לובי: בחירת השלב / המפה בפאנל נפרד בצד שמאל, עם מקום לתמונות גדולות */
+#lobby { justify-content: space-between; gap: 16px; }
+#mapPanel { width: min(540px, 44vw); }
+#mapPanel h3 { margin: 0; font-size: 17px; opacity: 1; font-weight: 800; }
+#mapPanel #levels { max-height: calc(100vh - 150px); }
+#mapPanel #levels.maps { max-height: calc(100vh - 150px); grid-template-columns: repeat(3, 1fr); gap: 9px; }
+#mapPanel .map b { font-size: 14px; padding: 2px 0 3px; }
+#mapPanel #levels .tab { font-size: 14px; padding: 9px 4px; }
+#mapPanel .lv b { font-size: 20px; }
+#mapPanel .lv small { font-size: 11px; }
+#mapPanel .lv { padding: 9px 0 6px; }
+@media (max-width: 900px) {
+  #lobby { flex-direction: column; align-items: stretch; justify-content: flex-start; overflow-y: auto; pointer-events: auto; }
+  #lobby .panel { width: 100%; max-height: none; flex: none; }
+  #mapPanel { order: 2; }
+  #mapPanel #levels, #mapPanel #levels.maps { max-height: 46vh; }
+}

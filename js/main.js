@@ -601,7 +601,7 @@ class Game {
     if (input.item && live) this.useItem();
     this.shieldT -= dt;
     this.slipT -= dt;
-    this.car.grip = this.slipT > 0 ? 0.04 : this.level.ice ? 0.3 : 1;
+    this.car.grip = this.slipT > 0 ? 0.04 : this.level.ice || this.level.onIce(this.phys) ? 0.3 : 1;
     this.shield.visible = this.shieldT > 0 && !this.gone;
     if (this.shield.visible) this.shield.position.copy(this.pos);
     for (let i = this.oils.length - 1; i >= 0; i--) {
@@ -1399,9 +1399,9 @@ function renderLobby() {
     }
   } else for (let i = 1; i <= maxLevel(mode); i++) {
     const lock = i > open;
-    html += `<button class="lv${i === sel ? ' on' : ''}${lock ? ' lock' : ''}${best[i] ? ' done' : ''}" data-l="${i}" ${!net.isHost || lock ? 'disabled' : ''}><b>${i}</b><small>${best[i] ? fmt(best[i]) : lock ? '🔒' : ''}</small></button>`;
+    html += `<button class="map lvc${i === sel ? ' on' : ''}${lock ? ' lock' : ''}${best[i] ? ' done' : ''}" data-l="${i}" ${!net.isHost || lock ? 'disabled' : ''}><img src="${preview(mode, i)}" alt="" loading="lazy"><b>${lock ? '🔒 ' : ''}שלב ${i}${best[i] ? ' · ' + fmt(best[i]) : ''}</b></button>`;
   }
-  $('#levels').className = maps ? 'maps' : '';
+  $('#levels').className = 'maps';
   $('#levels').innerHTML = html;
   $('#levels').querySelectorAll('.tab').forEach((b) => (b.onclick = () => { lobbyLevel[lobbyMode] = Number(b.dataset.cat) * 100 + 1; net.syncLobby(); }));
   $('#levels').querySelectorAll('.lv, .map').forEach((b) => (b.onclick = () => { lobbyLevel[lobbyMode] = Number(b.dataset.l); net.syncLobby(); }));

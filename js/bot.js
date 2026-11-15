@@ -249,6 +249,7 @@ export class Bot {
     if (!this.gone) {
       this.sync();
       const p = this.pos;
+      this.car.grip = lv.ice || lv.onIce(p) ? 0.3 : 1;
       if (!game.battle) {
         for (let i = Math.min(lv.cps.length - 1, this.cp + 2); i > this.cp; i--) if (lv.inZone(lv.cps[i], p)) { this.cp = i; this.fails = 0; break; }
         if (game.mode === 'chain') this.cp = Math.max(this.cp, game.cp);

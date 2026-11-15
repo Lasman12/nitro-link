@@ -362,3 +362,7 @@ body.touch #emotes { top: 130px; right: 14px; }
 
 .items li[data-item]:not([data-item=""]) { cursor: pointer; }
 .items li.pv { outline: 2px solid var(--blue); background: rgba(25, 181, 255, .16); opacity: 1; }
+
+.map.lvc.done { background: rgba(43, 255, 176, .16); }
+.map.lvc.lock { opacity: .45; cursor: default; }
+.map.lvc.lock img { filter: grayscale(1) brightness(.6); }

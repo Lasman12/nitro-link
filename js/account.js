@@ -167,7 +167,8 @@ export class Account {
     if (newPb) best[level] = ms;
     p[kind] = Math.max(p[kind] || 0, level);
     // גביעים ומטבעות: שלב חדש שווה הרבה, שיא אישי קצת, ומשחק חוזר מעט
-    const tr = first ? level : Math.floor(level / 3); // שלב חדש = מספר השלב; שלב שכבר הושלם = שליש, מעוגל למטה
+    const tl = Math.min(level, 30); // מעל שלב 30 הגביעים נשארים 30
+    const tr = first ? tl : Math.floor(tl / 3); // שלב חדש = מספר השלב; שלב שכבר הושלם = שליש, מעוגל למטה
     const coins = first ? 30 + level * 2 : newPb ? 12 : 5;
     p.xp = (p.xp || 0) + xp; p.tr = (p.tr || 0) + tr; p.coins = (p.coins || 0) + coins;
     this.keep();

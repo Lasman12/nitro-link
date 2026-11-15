@@ -37,14 +37,14 @@ function themeFor(base, k) {
   T.floorTex = FLOORS[k % FLOORS.length];
   return T;
 }
-export const RACE_LEVELS = 30, CHAIN_LEVELS = 20, VS_MAPS = 399, BATTLE_MAPS = 4;
+export const RACE_LEVELS = 60, CHAIN_LEVELS = 20, VS_MAPS = 399, BATTLE_MAPS = 4;
 // תת-קטגוריות של מירוץ החברים. מספר המפה מקודד: קטגוריה * 100 + מספר
-export const VS_CATS = [{ n: 'רגיל', count: 30 }, { n: 'ארוך ומפותל', count: 6 }, { n: 'קרח', count: 6 }, { n: 'קארט · 3 הקפות', count: 6 }];
+export const VS_CATS = [{ n: 'רגיל', count: 30 }, { n: 'ארוך ומפותל', count: 6 }, { n: 'קרח', count: 6 }, { n: 'קארט · 3 הקפות', count: 6 }, { n: 'גשרים וקיצורים', count: 12 }];
 // מיני גיימס: תופסת, תפוס את הכתר, הרצפה נעלמת – וגם מירוצי הקרח
 export const MINI_CATS = [{ n: 'תופסת', count: 2 }, { n: 'תפוס את הכתר', count: 2 }, { n: 'הרצפה נעלמת', count: 2 }, { n: 'קרח', count: 6 }];
 export const miniSplit = (level) => { const c = Math.max(0, Math.min(3, Math.floor(level / 100))); return [c, Math.max(1, Math.min(MINI_CATS[c].count, level % 100))]; };
 const MINI_NAMES = [['שדה ענק', 'מגרש המכשולים'], ['מלך הגבעה', 'המגדל'], ['81 אריחים', '49 אריחים']];
-export const vsSplit = (level) => { const c = Math.max(0, Math.min(3, Math.floor(level / 100))); return [c, Math.max(1, Math.min(VS_CATS[c].count, level % 100))]; };
+export const vsSplit = (level) => { const c = Math.max(0, Math.min(4, Math.floor(level / 100))); return [c, Math.max(1, Math.min(VS_CATS[c].count, level % 100))]; };
 const ONE = new THREE.Vector3(1, 1, 1), UP = new THREE.Vector3(0, 1, 0);
 const hdr = (hex, k = 2.3) => new THREE.Color(hex).multiplyScalar(k);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -72,7 +72,8 @@ class Builder {
     this.cps = []; this.pads = []; this.dyn = []; this.buttons = []; this.finish = null; this.minY = 0;
     this.path = []; // נקודות לאורך המסלול – כדי שקישוטים לא יונחו עליו, ולזיהוי נפילה
     this.segs = [];
-    this.route = []; // קו הנסיעה לבוטים: נקודות כל 8 מטר, עם סימון של פערים
+    this.route = [];
+    this.iceZones = []; this.noRoute = false; // קו הנסיעה לבוטים: נקודות כל 8 מטר, עם סימון של פערים
     // בשרשרת הרצפות הן "מגדלים" עמוקים: מכונית שתלויה על השרשרת נשענת על הקיר ועולה לאורכו,
     // במקום להיסחף אל מתחת לפלטפורמה ולהיתקע שם
     this.thick = o.chain ? 24 : 1.2;
@@ -84,6 +85,7 @@ class Builder {
       floor: std({ map: ft, color: T.floor }),
       ramp: std({ map: tex.grid, color: T.ramp }),
       wall: std({ color: T.wall, metalness: 0.3, roughness: 0.55 }),
+      ice: std({ color: 0xc8f0ff, metalness: 0.55, roughness: 0.06, envMapIntensity: 1.6, emissive: 0x2a7fb8, emissiveIntensity: 0.25 }),
       hazard: std({ map: tex.stripes, color: T.hazard, emissive: T.hazard, emissiveMap: tex.stripes, emissiveIntensity: 0.35 }),
       checker: std({ map: tex.checker, roughness: 0.6 }),
       trimA: new THREE.MeshBasicMaterial({ color: hdr(T.trimA) }),
@@ -132,7 +134,8 @@ class Builder {
     const mid = this.p.clone().addScaledVector(f, len / 2).addScaledVector(l, off);
     mid.y += rise / 2;
     this.segs.push({ x: mid.x, z: mid.z, yaw: this.yaw, w, len });
-    this.solid(mid.clone().addScaledVector(n, -thick / 2), [w, thick, slope], q, rise ? 'ramp' : 'floor');
+    this.solid(mid.clone().addScaledVector(n, -thick / 2), [w, thick, slope], q, o.ice ? 'ice' : rise ? 'ramp' : 'floor');
+    if (o.ice) this.iceZones.push({ pos: mid.clone(), f: f.clone(), l: l.clone(), w, len });
     for (const s of [-1, 1]) {
       this.addGeo(rise ? 'trimB' : 'trimA', new THREE.BoxGeometry(0.28, 0.1, slope), mid.clone().addScaledVector(l, s * (w / 2 - 0.14)).addScaledVector(n, 0.03), q);
     }
@@ -141,7 +144,7 @@ class Builder {
   }
   mark(len, off = 0, o = {}) {
     const f = this.F(), l = this.Lf();
-    if (!o.stay) for (let d = 0, L = o.routeLen ?? len; d < L || d === 0; d += 8) {
+    if (!o.stay && !this.noRoute) for (let d = 0, L = o.routeLen ?? len; d < L || d === 0; d += 8) {
       const pt = this.p.clone().addScaledVector(f, d).addScaledVector(l, off);
       pt.y += ((o.rise || 0) * d) / (len || 1);
       pt.gap = !!o.gap;
@@ -159,11 +162,12 @@ class Builder {
     this.addGeo('trimB', new THREE.BoxGeometry(size[0] + 0.04, 0.1, size[2] + 0.04), this.at(a, l, size[1] + 0.03), this.quat());
   }
 
-  plaza(size, deg) {
+  // o.gapFar / o.gapSide: פתח באמצע הקיר (לקיצורי דרך שעוברים דרך הפנייה)
+  plaza(size, deg, o = {}) {
     const f = this.F();
-    const side = deg > 0 ? -1 : 1;
-    this.wall(size - 0.4, 0, [size, 1.4, 0.8]);
-    this.wall(size / 2, side * (size / 2 - 0.4), [0.8, 1.4, size]);
+    const side = deg > 0 ? -1 : 1, G = 7, part = (size - G) / 2, c = G / 2 + part / 2;
+    if (o.gapFar) for (const s of [-1, 1]) this.wall(size - 0.4, s * c, [part, 1.4, 0.8]); else this.wall(size - 0.4, 0, [size, 1.4, 0.8]);
+    if (o.gapSide) for (const s of [-1, 1]) this.wall(size / 2 + s * c, side * (size / 2 - 0.4), [0.8, 1.4, part]); else this.wall(size / 2, side * (size / 2 - 0.4), [0.8, 1.4, size]);
     this.seg(size, { w: size, routeLen: size / 2 });
     this.p.addScaledVector(f, -size / 2);
     this.yaw += (deg * Math.PI) / 180;
@@ -375,7 +379,7 @@ class Builder {
       this.group.add(m);
     }
     this.ctx.scene.add(this.group);
-    const { cps, pads, dyn, buttons, finish, group, mats, path, T, route } = this;
+    const { cps, pads, dyn, buttons, finish, group, mats, path, T, route, iceZones } = this;
     const tq = new THREE.Quaternion();
     const green = hdr(0x2bff7a, 1.4), idle = hdr(this.T.trimB, 1.4);
     return {
@@ -388,6 +392,14 @@ class Builder {
       inPad(pd, p) {
         const dx = p.x - pd.pos.x, dy = p.y - pd.pos.y, dz = p.z - pd.pos.z;
         return Math.abs(dx * pd.f.x + dz * pd.f.z) < 3 && Math.abs(dx * pd.l.x + dz * pd.l.z) < 2 && dy > -0.5 && dy < 2.2;
+      },
+      // האם המכונית על קטע קרח
+      onIce(p) {
+        for (const z of iceZones) {
+          const dx = p.x - z.pos.x, dz = p.z - z.pos.z, dy = p.y - z.pos.y;
+          if (dy > -1 && dy < 3 && Math.abs(dx * z.f.x + dz * z.f.z) < z.len / 2 && Math.abs(dx * z.l.x + dz * z.l.z) < z.w / 2) return true;
+        }
+        return false;
       },
       // גובה המסלול הקרוב ביותר – כדי לזהות נפילה מהר, גם בחלקים גבוהים של המסלול
       floorNear(p) {
@@ -645,7 +657,73 @@ Object.assign(R, {
     b.seg(8, { w });
   },
 });
-const R_UNLOCK = { straight: 1, hurdles: 1, rampJump: 1, pillars: 2, bumps: 3, climb: 3, sliders: 4, stairs: 5, downhill: 5, bigJump: 6, chicane: 6, sweepers: 7, rails: 8, narrow: 8, hammers: 9, dropJump: 9, movers: 11, islands: 12, zigzag: 13 };
+// קטעים מתקדמים (שלבים 31 ומעלה ומפות "גשרים וקיצורים")
+Object.assign(R, {
+  // קטע קרח עם עמודים: האחיזה נעלמת, צריך לכוון מוקדם
+  icePatch(b, d, r, w) {
+    b.seg(8, { w });
+    const n = 2 + Math.round(d * 2);
+    let side = r() > 0.5 ? 1 : -1;
+    for (let i = 0; i < n; i++) { b.block(12 + i * 13, side * w * 0.22, [w * 0.28, 5, 3]); side = -side; }
+    b.seg(14 + n * 13, { w, ice: true });
+    b.seg(10, { w });
+  },
+  // מוטות שעולים מהרצפה ויורדים
+  risers(b, d, r, w) {
+    const n = 3 + Math.round(d * 2);
+    for (let i = 0; i < n; i++) b.slider(12 + i * 13, 0, [w, 0.8, 0.8], { axis: 'u', amp: 1.1, period: lerp(3, 2, d), phase: r() * 6.28 });
+    b.seg(14 + n * 13, { w });
+  },
+  // קירות גבוהים: צריך קפיצה מלאה (להחזיק את מקש הקפיצה)
+  wallJump(b, d, r, w) { b.pad(6, 0); b.block(22, 0, [w, 1.7, 1]); b.block(44, 0, [w, lerp(1.7, 2.0, d), 1]); b.seg(60, { w }); },
+  // קומה עליונה: רמפה צרה לגשר מהיר עם בוסט, שעובר מעל הכביש הרגיל ומדלג על המכשולים שבו
+  upperDeck(b, d, r, w) {
+    const off = (r() > 0.5 ? 1 : -1) * (w / 2 - 2.6), p0 = b.p.clone();
+    b.noRoute = true;
+    b.seg(14, { w: 5, off, rise: 5 });
+    b.pad(4, off); b.pad(22, off);
+    b.seg(42, { w: 5, off, thick: 0.6 });
+    b.noRoute = false;
+    b.p.copy(p0);
+    for (let i = 0; i < 3; i++) b.slider(20 + i * 14, 0, [w * 0.34, 3.2, 2], { amp: w * 0.3, period: lerp(3.4, 2.4, d), phase: r() * 6.28 });
+    b.seg(74, { w });
+  },
+  // גשר עילי: המסלול עולה בלולאה וחוצה מעל עצמו
+  overpass(b, d, r, w) {
+    const sg = r() > 0.5 ? 1 : -1, S = 30, W = Math.min(w, 12);
+    b.pad(8, 0); b.pad(60, 0);
+    b.seg(96, { w: W });
+    b.plaza(S, 90 * sg); b.seg(40, { w: W, rise: 4.5 });
+    b.plaza(S, 90 * sg); b.cp(6, W); b.seg(51, { w: W, rise: 4.5 });
+    b.plaza(S, 90 * sg); b.pad(20, 0); b.seg(100, { w: W });
+    b.plaza(S, 90 * sg);
+    b.block(60, 0, [W, 1, 1.2]);
+    b.seg(112, { w: W });
+  },
+  // קיצור דרך: הדרך הראשית עוקפת מסביב, ומי שמעז נוסע ישר על גשר צר עם פער
+  shortcut(b, d, r, w) {
+    const sg = r() > 0.5 ? 1 : -1, S = 30, W = Math.min(w, 12), L1 = 36, L2 = 84, g = lerp(9, 13, d);
+    b.seg(10, { w: W });
+    const p0 = b.p.clone(), y0 = b.yaw, f0 = b.F();
+    b.plaza(S, 90 * sg, { gapFar: true });
+    const pe = b.p.clone(), ye = b.yaw;
+    b.p.copy(p0).addScaledVector(f0, S); b.yaw = y0; b.noRoute = true;
+    b.pad(4, 0); b.seg(30, { w: 4.5 }); b.gap(g); b.seg(L2 - 30 - g, { w: 4.5 });
+    b.noRoute = false; b.p.copy(pe); b.yaw = ye;
+    b.wall(L1 / 2, W * 0.21, [W * 0.56, 3, 1.4]);
+    b.seg(L1, { w: W });
+    b.plaza(S, -90 * sg);
+    for (let i = 0; i < 3; i++) b.slider(18 + i * 22, 0, [W * 0.36, 3.2, 2], { amp: W * 0.3, period: lerp(3.4, 2.4, d), phase: r() * 6.28 });
+    b.seg(L2, { w: W });
+    b.plaza(S, -90 * sg);
+    b.seg(L1, { w: W });
+    b.plaza(S, 90 * sg, { gapSide: true });
+  },
+});
+const R_NEW = ['overpass', 'shortcut', 'upperDeck', 'icePatch', 'risers', 'wallJump'];
+const R_STRAIGHT_ONLY = new Set(['overpass', 'shortcut']); // לולאות: רק כשהמסלול בכיוון ההתחלה, כדי שלא יחצו קטעים קודמים
+const OLD_POOL = () => Object.keys(R_UNLOCK).filter((k) => R_UNLOCK[k] <= 30);
+const R_UNLOCK = { straight: 1, hurdles: 1, rampJump: 1, pillars: 2, bumps: 3, climb: 3, sliders: 4, stairs: 5, downhill: 5, bigJump: 6, chicane: 6, sweepers: 7, rails: 8, narrow: 8, hammers: 9, dropJump: 9, movers: 11, islands: 12, zigzag: 13, overpass: 31, shortcut: 31, upperDeck: 31, icePatch: 31, risers: 31, wallJump: 31 };
 
 // מסלול מירוץ כללי. פניות: המסלול פונה רק ימינה/שמאלה ביחס לכיוון ההתחלה ולעולם לא חוזר אחורה, כך שהוא לא חוצה את עצמו
 function genTrack(b, o) {
@@ -658,7 +736,7 @@ function genTrack(b, o) {
   for (let i = 0; i < n; i++) {
     let k;
     if (i < fresh.length) k = fresh[i]; // קטע חדש מוצג בתחילת השלב שבו הוא נפתח
-    else do { k = pool[Math.floor(r() * pool.length)]; } while (k === last || (k === 'straight' && d > 0.5));
+    else do { k = pool[Math.floor(r() * pool.length)]; } while (k === last || (k === 'straight' && d > 0.5) || (h !== 0 && R_STRAIGHT_ONLY.has(k)));
     last = k;
     if (i % cpEvery === 0) b.cp(8, w);
     if (r() < combo) b.block(10, 0, [w, 1, 1.2]); // בשלבים הקשים: משוכה גם בקטעי החיבור
@@ -679,12 +757,21 @@ function genTrack(b, o) {
 }
 
 // קושי: עד שלב 10 עלייה מתונה, ומשם והלאה עקומה תלולה יותר
-const raceDiff = (L) => (L <= 10 ? ((L - 1) / 9) * 0.42 : 0.47 + 0.53 * Math.pow((L - 10) / (RACE_LEVELS - 10), 0.75));
+const raceDiff = (L) => (L <= 10 ? ((L - 1) / 9) * 0.42 : 0.47 + 0.53 * Math.pow((L - 10) / 20, 0.75));
 function genRace(b, L) {
+  if (L > 30) {
+    // שלבים 31–60: ארוכים, עם הקטעים המתקדמים (שניים מהם מובטחים בתחילת כל שלב)
+    const hh = (L - 30) / 30, rr = rng(L * 7919 + 13), dd = 0.72 + 0.28 * hh;
+    genTrack(b, {
+      r: rr, d: dd, w: Math.round(lerp(13, 10, hh)), n: Math.round(lerp(9, 14, hh)), pool: Object.keys(R_UNLOCK).filter((k) => k !== 'straight'),
+      fresh: [R_NEW[L % R_NEW.length], R_NEW[(L + 2 + Math.floor(L / 6)) % R_NEW.length]].filter((k, i, a) => a.indexOf(k) === i), combo: 0.25,
+    });
+    return;
+  }
   const d = raceDiff(L), r = rng(L * 7919 + 13);
   genTrack(b, {
     r, d, w: Math.round(lerp(18, 10, d)), n: Math.round(lerp(4, 15, d)), turns: L >= 2,
-    pool: Object.keys(R_UNLOCK).filter((k) => R_UNLOCK[k] <= L),
+    pool: OLD_POOL().filter((k) => R_UNLOCK[k] <= L),
     fresh: Object.keys(R_UNLOCK).filter((k) => R_UNLOCK[k] === L && k !== 'straight'),
     cpEvery: d < 0.55 ? 1 : 2, combo: L > 10 ? (d - 0.4) * 0.8 : 0,
   });
@@ -695,13 +782,21 @@ const VS_SIZES = ['קצר', 'בינוני', 'ארוך'];
 const vsSize = (M) => Math.min(2, Math.floor((M - 1) / 10));
 function genVs(b, M) {
   const r = rng(M * 9973 + 5), d = 0.12 + r() * 0.5;
-  genTrack(b, { r, d, w: Math.round(lerp(20, 14, d)), n: [4, 8, 13][vsSize(M)], pool: Object.keys(R_UNLOCK).filter((k) => k !== 'narrow' && k !== 'rails') });
+  genTrack(b, { r, d, w: Math.round(lerp(20, 14, d)), n: [4, 8, 13][vsSize(M)], pool: OLD_POOL().filter((k) => k !== 'narrow' && k !== 'rails') });
+}
+// מפות "גשרים וקיצורים": כל מפה נפתחת בשניים מהקטעים המתקדמים
+function genVsNew(b, i) {
+  const r = rng(i * 5113 + 17), d = 0.15 + r() * 0.4;
+  genTrack(b, {
+    r, d, w: 16, n: 4 + Math.floor(i / 2), pool: Object.keys(R_UNLOCK).filter((k) => k !== 'narrow' && k !== 'rails' && k !== 'straight'),
+    fresh: [R_NEW[i % R_NEW.length], R_NEW[(i + 1 + Math.floor(i / 6)) % R_NEW.length]].filter((k, j, a) => a.indexOf(k) === j),
+  });
 }
 
 const EASY_POOL = ['straight', 'hurdles', 'rampJump', 'pillars', 'bumps', 'sliders', 'downhill', 'chicane', 'sweepers', 'dropJump', 'climb'];
 function genTwisty(b, i) {
   const r = rng(i * 6151 + 3);
-  genTrack(b, { r, d: 0.2 + r() * 0.4, w: 16, n: 16, pool: Object.keys(R_UNLOCK).filter((k) => k !== 'narrow' && k !== 'rails'), turnMin: 1, turnVar: 2 });
+  genTrack(b, { r, d: 0.2 + r() * 0.4, w: 16, n: 16, pool: OLD_POOL().filter((k) => k !== 'narrow' && k !== 'rails'), turnMin: 1, turnVar: 2 });
 }
 function genIce(b, i) {
   const r = rng(i * 3301 + 9);
@@ -925,6 +1020,7 @@ function make(mode, level, ctx) {
     if (c === 1) { b = new Builder(ctx, themeFor(TH[(i * 7 + 2) % TH.length], i + 1)); genTwisty(b, i); }
     else if (c === 2) { b = new Builder(ctx, { ...themeFor(TH[3], i), decor: DECOR[i % DECOR.length] }); genIce(b, i); }
     else if (c === 3) { b = new Builder(ctx, themeFor(TH[(i * 3) % TH.length], i + 3)); genKart(b, i); }
+    else if (c === 4) { b = new Builder(ctx, themeFor(TH[(i * 7 + 5) % TH.length], i + 4)); genVsNew(b, i); }
     else { b = new Builder(ctx, themeFor(TH[(i * 3 + 1) % TH.length], i + 2)); genVs(b, i); }
   } else if (mode === 'mini') {
     const [c, i] = miniSplit(L);
@@ -940,7 +1036,7 @@ function make(mode, level, ctx) {
     genArena(b, L);
   } else {
     L = clamp(L, 1, RACE_LEVELS);
-    b = new Builder(ctx, themeFor(TH[(L - 1) % TH.length], L));
+    b = new Builder(ctx, L > 30 ? themeFor(TH[(L + 4) % TH.length], L + 1) : themeFor(TH[(L - 1) % TH.length], L));
     if (L === HAND_RACE) raceCourse(b); else genRace(b, L);
   }
   return { b, L };
@@ -970,6 +1066,7 @@ export function mapInfo(mode, level) {
   if (mode === 'mini') { const [mc, mi] = miniSplit(level); return mc === 3 ? { name: `קרח ${mi}`, size: 'מירוץ חלקלק' } : { name: MINI_NAMES[mc][mi - 1], size: MINI_CATS[mc].n }; }
   const [c, i] = vsSplit(level);
   if (c === 1) return { name: `פיתולים ${i}`, size: 'ארוך' };
+  if (c === 4) return { name: `גשרים ${i}`, size: 'גשרים וקיצורים' };
   if (c === 2) return { name: `קרח ${i}`, size: 'חלקלק' };
   if (c === 3) return { name: `קארט ${i}`, size: '3 הקפות' };
   return { name: `${TH[(i * 3 + 1) % TH.length].n} ${i}`, size: VS_SIZES[vsSize(i)] };

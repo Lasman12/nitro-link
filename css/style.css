@@ -366,3 +366,6 @@ body.touch #emotes { top: 130px; right: 14px; }
 .map.lvc.done { background: rgba(43, 255, 176, .16); }
 .map.lvc.lock { opacity: .45; cursor: default; }
 .map.lvc.lock img { filter: grayscale(1) brightness(.6); }
+
+.roomBtns { display: flex; flex-direction: column; gap: 6px; }
+#btnPublic.on { background: linear-gradient(135deg, #0f9d58, #2bffb0); border-color: transparent; color: #04121f; }

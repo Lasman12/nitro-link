@@ -52,6 +52,7 @@
       <input id="code" maxlength="5" placeholder="קוד חדר" autocomplete="off" dir="ltr">
       <button id="btnJoin" class="btn orange"><span>הצטרף</span></button>
     </div>
+    <button id="btnFind" class="btn ghost"><span>🔍 חפש קבוצה</span></button>
     <div class="row">
       <button id="btnSolo" class="btn ghost"><span>אימון לבד</span></button>
       <button id="btnGarage" class="btn ghost"><span>מוסך</span></button>
@@ -137,7 +138,7 @@
   <div class="panel wide">
     <div id="roomBox">
       <div><small>קוד החדר</small><div id="roomCode" dir="ltr">----</div></div>
-      <button id="btnCopy" class="btn ghost small"><span>העתק קישור</span></button>
+      <div class="roomBtns"><button id="btnCopy" class="btn ghost small"><span>העתק קישור</span></button><button id="btnPublic" class="btn ghost small"><span>חדר פרטי 🔒</span></button></div>
     </div>
     <h3>שחקנים</h3>
     <ul id="players"></ul>
@@ -169,6 +170,7 @@
     <p id="chainNote" class="note"></p>
     <button id="btnStart" class="btn primary"><span>התחל משחק</span></button>
     <p id="lobbyWait" class="tag hidden">ממתין שהמארח יתחיל…</p>
+    <button id="btnLobbyLb" class="btn ghost small"><span>טבלת שיאים</span></button>
     <div class="row">
       <button id="btnLobbyGarage" class="btn ghost"><span>מוסך</span></button>
       <button id="btnLeave" class="btn ghost"><span>יציאה</span></button>

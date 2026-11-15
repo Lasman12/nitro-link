@@ -1232,7 +1232,9 @@ function renderLb() {
   else list.innerHTML = rows.map((e, i) => `<li class="${myName && e.names.split(' + ').includes(myName) ? 'me' : ''}"><span class="n">${i + 1}</span>${esc(e.names)}<span class="v"><em>${fmt(e.time)}</em><b>שלב ${e.level}</b></span></li>`).join('');
   $('#lbNote').textContent = account.online ? '' : 'הטבלה שמורה במכשיר ומתמזגת עם חברים שמשחקים איתכם באותו חדר.';
 }
-async function openLb() {
+let lbFrom = 'menu';
+async function openLb(from = 'menu') {
+  lbFrom = from;
   lbData = null;
   show('lb');
   renderLb();
@@ -1362,6 +1364,9 @@ function openGarage(from) {
 function renderLobby() {
   $('#roomCode').textContent = net.offline ? 'אימון' : net.code;
   $('#btnCopy').classList.toggle('hidden', net.offline);
+  $('#btnPublic').classList.toggle('hidden', net.offline || !net.isHost || !net.canMatch);
+  $('#btnPublic').classList.toggle('on', !!net.isPublic);
+  $('#btnPublic span').textContent = net.isPublic ? 'חדר ציבורי 🌍' : 'חדר פרטי 🔒';
   renderBots();
   $('#players').innerHTML = net.players.map((p) => `<li><i style="background:${esc(p.skin?.color || '#fff')}"></i>${esc(p.name)}<em>${p.bot ? `בוט · רמה ${p.lvl}` : ''}${p.id === 0 ? 'מארח' : ''}${p.id === net.myId ? ' (אני)' : ''}</em></li>`).join('');
   if (net.offline && lobbyMode !== 'race') lobbyMode = 'race'; // שאר המצבים רק בחדר אמיתי
@@ -1441,6 +1446,60 @@ function startGame(mode, level, startAt) {
   show('game');
 }
 
+// ----- חיפוש קבוצה: מצטרפים לחדר ציבורי פתוח, ואם אין – פותחים אחד ומחכים -----
+let seeking = false;
+function joined(w) {
+  $('#menuErr').textContent = '';
+  lobbyMode = MAXL[w.mode] ? w.mode : 'race';
+  lobbyLevel[lobbyMode] = w.level || 1;
+  enterLobby();
+  if (net.viaRelay) toast('מחוברים דרך שרת ממסר – החיבור הישיר נחסם ברשת של אחד מכם', 5000);
+  shareLb();
+  if (w.game) startGame(w.game.mode, w.game.level || 1, w.game.startAt);
+}
+async function tryJoinPublic(exclude) {
+  let list = [];
+  try { list = await Net.findPublic(exclude); } catch { /* אין רשימה – ממשיכים לפתיחת חדר */ }
+  for (const c of list.slice(0, 3)) {
+    try { const w = await net.join(c.code, me); joined(w); toast(`הצטרפת לקבוצה של ${c.h || 'שחקן'}`, 4000); return true; } catch { /* החדר נסגר בינתיים – מנסים את הבא */ }
+  }
+  return false;
+}
+async function openPublicRoom() {
+  await net.host(me);
+  net.setPublic(true, false);
+  seeking = true;
+  $('#menuErr').textContent = '';
+  pickNext();
+  enterLobby();
+}
+async function findGroup() {
+  readName(); sfx.init();
+  if (!net.canMatch) { $('#menuErr').textContent = 'חיפוש קבוצה לא זמין בגרסה הזו'; return; }
+  $('#menuErr').textContent = 'מחפש קבוצה…';
+  if (await tryJoinPublic()) return;
+  $('#menuErr').textContent = 'לא נמצאה קבוצה פתוחה – פותח חדר ציבורי…';
+  try { await openPublicRoom(); toast('פתחנו לך חדר ציבורי – מי שיחפש קבוצה יצטרף אליו', 6000); } catch (e) { $('#menuErr').textContent = errText(e); }
+}
+// שני שחקנים שחיפשו באותו רגע פתחו כל אחד חדר: מי שלבד עובר לחדר השני (זה עם הקוד הקטן יותר נשאר)
+let merging = false;
+setInterval(async () => {
+  if (net.isHost && net.isPublic) net.publish(!!game);
+  if (!seeking || merging || !net.isHost || !net.isPublic || game || screen !== 'lobby') return;
+  if (net.players.filter((p) => !p.bot).length > 1) { seeking = false; return; }
+  merging = true;
+  try {
+    const mine = net.code, list = await Net.findPublic(mine);
+    const target = list.find((c) => c.n > 1 || c.code < mine);
+    if (target && net.code === mine && net.players.filter((p) => !p.bot).length === 1 && screen === 'lobby') {
+      net.leave();
+      try { const w = await net.join(target.code, me); seeking = false; joined(w); toast(`הצטרפת לקבוצה של ${target.h || 'שחקן'}`, 4000); }
+      catch { try { await openPublicRoom(); } catch { show('menu'); refreshShowroom(); } }
+    }
+  } catch { /* ננסה שוב בסיבוב הבא */ }
+  merging = false;
+}, 8000);
+
 function hostStart(mode, level) {
   if (!net.isHost) return;
   if (mode !== 'race' && (net.offline || net.players.length < 2)) { toast('המצב הזה דורש חדר עם שני שחקנים לפחות'); toLobby(); return; }
@@ -1452,10 +1511,12 @@ function hostStart(mode, level) {
   const startAt = net.now() + 4200;
   currentGame = { mode, level, startAt };
   net.hostCmd({ t: 'start', mode, level, startAt });
+  if (net.isPublic) net.publish(true);
   startGame(mode, level, startAt);
 }
 
 function toLobby() {
+  setTimeout(() => { if (net.isHost && net.isPublic) net.publish(false); }, 0);
   if (game) { game.dispose(); game = null; }
   currentGame = null;
   enterLobby();
@@ -1535,16 +1596,11 @@ $('#btnJoin').onclick = async () => {
   if (code.length < 4) { $('#menuErr').textContent = 'הקלידו קוד חדר'; return; }
   $('#menuErr').textContent = 'מתחבר…';
   try {
-    const w = await net.join(code, me);
-    $('#menuErr').textContent = '';
-    lobbyMode = MAXL[w.mode] ? w.mode : 'race';
-    lobbyLevel[lobbyMode] = w.level || 1;
-    enterLobby();
-    if (net.viaRelay) toast('מחוברים דרך שרת ממסר – החיבור הישיר נחסם ברשת של אחד מכם', 5000);
-    shareLb();
-    if (w.game) startGame(w.game.mode, w.game.level || 1, w.game.startAt);
+    joined(await net.join(code, me));
   } catch (e) { $('#menuErr').textContent = errText(e); }
 };
+$('#btnFind').onclick = findGroup;
+$('#btnPublic').onclick = () => { if (!net.isHost) return; net.setPublic(!net.isPublic, !!game); seeking = false; renderLobby(); toast(net.isPublic ? 'החדר ציבורי – שחקנים שמחפשים קבוצה יכולים להצטרף' : 'החדר פרטי – רק עם הקוד או הקישור', 4000); };
 $('#code').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#btnJoin').click(); });
 $('#btnSolo').onclick = () => { readName(); sfx.init(); net.solo(me); pickNext(); enterLobby(); };
 $('#btnGarage').onclick = () => { readName(); openGarage('menu'); };
@@ -1559,8 +1615,9 @@ document.querySelectorAll('.mode').forEach((b) => (b.onclick = () => { if (net.i
 $('#btnStart').onclick = () => hostStart(lobbyMode, lobbyLevel[lobbyMode]);
 $('#btnNext').onclick = () => { if (game) hostStart(game.mode, game.lvl + 1); };
 $('#btnRetry').onclick = () => { if (game) hostStart(game.mode, game.lvl); };
-$('#btnLb').onclick = openLb;
-$('#btnLbBack').onclick = () => show('menu');
+$('#btnLb').onclick = () => openLb('menu');
+$('#btnLbBack').onclick = () => { if (lbFrom === 'lobby' && net.players.length) enterLobby(); else show('menu'); };
+$('#btnLobbyLb').onclick = () => openLb('lobby');
 document.querySelectorAll('#lb .tab').forEach((t) => (t.onclick = () => { lbTab = t.dataset.tab; renderLb(); }));
 $('#lbLevel').innerHTML = Array.from({ length: RACE_LEVELS }, (_, i) => `<option value="${i + 1}">${i + 1}</option>`).join('');
 $('#lbLevel').onchange = renderLb;
@@ -1612,6 +1669,7 @@ addEventListener('gamepaddisconnected', () => toast('השלט התנתק'));
 // אירועי רשת
 net.getInfo = () => ({ mode: lobbyMode, level: lobbyLevel[lobbyMode], game: currentGame });
 net.on('players', (m) => {
+  if (net.isHost && net.isPublic) net.publish(!!game);
   if (!net.isHost && MAXL[m.mode]) { lobbyMode = m.mode; lobbyLevel[m.mode] = m.level || 1; }
   shareLb();
   if (screen === 'lobby') renderLobby();

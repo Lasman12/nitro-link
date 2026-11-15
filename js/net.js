@@ -12,6 +12,10 @@ const RELAY_OK = !!DB;
 // שרתי ה-TURN שמגיעים כברירת מחדל עם PeerJS כבר לא פעילים, לכן רק STUN (והממסר כגיבוי)
 const PEER_OPTS = { debug: 1, config: { iceServers: [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302', 'stun:stun.cloudflare.com:3478'] }] } };
 const randomCode = () => Array.from({ length: 4 }, () => ALPHA[Math.floor(Math.random() * ALPHA.length)]).join('');
+// רשימת החדרים הציבוריים ("חפש קבוצה"). נשמרת תחת קוד שמור שלא יכול לצאת כקוד חדר אמיתי (יש בו 0 ו-O)
+const DIR = `${DB}/rooms/P0OL`;
+const jfetch = (method, url, body) => fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) })
+  .then((r) => { if (!r.ok) throw new Error('dir ' + r.status); return r.json(); });
 const typed = (type) => Object.assign(new Error(type), { type });
 // ?relay=1 בכתובת מדלג על החיבור הישיר ומתחבר ישר דרך הממסר (לבדיקות ולמקרים בעייתיים)
 const FORCE_RELAY = RELAY_OK && new URLSearchParams(location.search).has('relay');
@@ -71,11 +75,13 @@ export class Net {
     this.handlers = {};
     this.getInfo = () => ({});
     this.clear();
-    addEventListener('pagehide', () => { if (this.isHost && this.relay) this.relay.req('DELETE', '').catch(() => {}); });
+    addEventListener('pagehide', () => { if (this.isHost && this.relay) this.relay.req('DELETE', '').catch(() => {}); this.unpublish(); });
   }
 
   clear() {
     clearInterval(this.timer);
+    this.unpublish();
+    this.isPublic = false;
     if (this.peer) { try { this.peer.destroy(); } catch { /* ignore */ } }
     if (this.relay) {
       this.relay.dead = true;
@@ -342,6 +348,32 @@ export class Net {
   }
 
   hostCmd(m) { if (this.isHost) this.broadcast(m); }
+
+  // ----- חדרים ציבוריים וחיפוש קבוצה -----
+  get canMatch() { return RELAY_OK; }
+  setPublic(on, inGame) {
+    const was = this.isPublic;
+    this.isPublic = !!on && this.isHost && !this.offline && RELAY_OK;
+    if (this.isPublic) this.publish(inGame); else if (was) { this.isPublic = true; this.unpublish(); this.isPublic = false; }
+  }
+  // המארח מעדכן את הרשומה שלו כל כמה שניות; רשומה שלא עודכנה נחשבת חדר שנסגר
+  publish(inGame) {
+    if (!this.isPublic || !this.isHost || !this.code) return;
+    jfetch('PUT', `${DIR}/l/${this.code}.json`, { t: { '.sv': 'timestamp' }, n: this.players.length, g: inGame ? 1 : 0, h: String(this.players[0]?.name || '').slice(0, 14) }).catch(() => {});
+  }
+  unpublish() { if (this.isPublic && this.isHost && this.code && RELAY_OK) fetch(`${DIR}/l/${this.code}.json`, { method: 'DELETE', keepalive: true }).catch(() => {}); }
+  static async findPublic(exclude) {
+    if (!RELAY_OK) return [];
+    // שעון השרת, כדי שלא נהיה תלויים בשעון של כל מחשב
+    const probe = `${DIR}/now/${Math.random().toString(36).slice(2, 10)}.json`;
+    const now = Number(await jfetch('PUT', probe, { '.sv': 'timestamp' })) || Date.now();
+    fetch(probe, { method: 'DELETE' }).catch(() => {});
+    const list = (await jfetch('GET', `${DIR}/l.json`)) || {};
+    return Object.entries(list)
+      .filter(([c, e]) => e && /^[A-Z2-9]{4}$/.test(c) && c !== exclude && now - Number(e.t) < 50000 && !e.g && Number(e.n) < MAX_PLAYERS)
+      .sort((a, b) => b[1].n - a[1].n || (a[0] < b[0] ? -1 : 1))
+      .map(([c, e]) => ({ code: c, n: Number(e.n) || 1, h: String(e.h || '').slice(0, 14) }));
+  }
 
   // ----- בוטים: שחקנים שהמארח מריץ בעצמו -----
   get bots() { return this.players.filter((p) => p.bot); }

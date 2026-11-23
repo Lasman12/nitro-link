@@ -2,7 +2,7 @@
 // לבוט יש אותו ממשק כמו Remote (שחקן מרוחק), כך ששאר המשחק לא מבדיל ביניהם.
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
-import { CarPhysics, CarVisual, P as CP, G_WORLD, G_CAR, G_KIN, G_REMOTE } from './car.js?v=1795464850';
+import { CarPhysics, CarVisual, P as CP, G_WORLD, G_CAR, G_KIN, G_REMOTE } from './car.js?v=1795468522';
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const lerp = (a, b, t) => a + (b - a) * t;

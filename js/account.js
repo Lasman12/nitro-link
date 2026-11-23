@@ -1,6 +1,6 @@
 // חשבונות (שם משתמש + סיסמה), התקדמות, שיאים אישיים, XP וטבלת שיאים.
 // שני מצבים: מקומי (localStorage, ברירת מחדל) או מקוון דרך Firebase (כשממלאים את js/config.js).
-import { FIREBASE } from './config.js?v=1795464850';
+import { FIREBASE } from './config.js?v=1795468522';
 
 const ONLINE = !!(FIREBASE.apiKey && FIREBASE.databaseURL);
 const DB = (FIREBASE.databaseURL || '').replace(/\/+$/, '');

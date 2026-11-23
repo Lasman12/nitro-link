@@ -5,15 +5,15 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { CarPhysics, CarVisual, carShape, addForce, P as CP, DEFAULT_SKIN, SKIN_OPTS, G_CAR, G_REMOTE } from './car.js?v=1795464850';
-import { T_UNLOCK, TRAP_NAMES, buildLevel, CHAIN_LEN, RACE_LEVELS, CHAIN_LEVELS, VS_MAPS, BATTLE_MAPS, VS_CATS, MINI_CATS, vsSplit, miniSplit, mapInfo, trackShape } from './level.js?v=1795464850';
-import { WRAPS, GRADS, FEATHERS, TRAILS, HORNS, ROAD, SHOP, SOURCE, itemName, itemSwatch } from './items.js?v=1795464850';
-import { Account, rankOf, AuthError } from './account.js?v=1795464850';
-import { Sky, Particles, ChainVisual, tex } from './fx.js?v=1795464850';
-import { Net } from './net.js?v=1795464850';
-import { Input } from './input.js?v=1795464850';
-import { Sfx } from './audio.js?v=1795464850';
-import { Bot, BOT_NAMES, botSkin } from './bot.js?v=1795464850';
+import { CarPhysics, CarVisual, carShape, addForce, P as CP, DEFAULT_SKIN, SKIN_OPTS, G_CAR, G_REMOTE } from './car.js?v=1795468522';
+import { T_UNLOCK, TRAP_NAMES, buildLevel, CHAIN_LEN, RACE_LEVELS, CHAIN_LEVELS, VS_MAPS, BATTLE_MAPS, VS_CATS, MINI_CATS, vsSplit, miniSplit, mapInfo, trackShape } from './level.js?v=1795468522';
+import { WRAPS, GRADS, FEATHERS, TRAILS, HORNS, ROAD, SHOP, SOURCE, itemName, itemSwatch } from './items.js?v=1795468522';
+import { Account, rankOf, AuthError } from './account.js?v=1795468522';
+import { Sky, Particles, ChainVisual, tex } from './fx.js?v=1795468522';
+import { Net } from './net.js?v=1795468522';
+import { Input } from './input.js?v=1795468522';
+import { Sfx } from './audio.js?v=1795468522';
+import { Bot, BOT_NAMES, botSkin } from './bot.js?v=1795468522';
 
 const $ = (s) => document.querySelector(s);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -1462,6 +1462,7 @@ function renderLobby() {
   $('#levels').className = 'maps';
   $('#levels').innerHTML = html;
   lazyPreviews();
+  $('#btnShowMaps span').textContent = '▶ ' + $('#levelsTitle').textContent;
   $('#levels').querySelectorAll('.tab').forEach((b) => (b.onclick = () => { lobbyLevel[lobbyMode] = Number(b.dataset.cat) * 100 + 1; net.syncLobby(); }));
   $('#levels').querySelectorAll('.lv, .map').forEach((b) => (b.onclick = () => { lobbyLevel[lobbyMode] = Number(b.dataset.l); net.syncLobby(); }));
   if (renderLobby.last !== mode + sel) { renderLobby.last = mode + sel; $('#levels').querySelector('.on')?.scrollIntoView({ block: 'nearest' }); }
@@ -1481,6 +1482,19 @@ function renderBots() {
     const used = new Set(net.players.map((p) => p.name)), i = BOT_NAMES.findIndex((n) => !used.has(n));
     net.addBot(BOT_NAMES[Math.max(0, i)], botSkin(Math.max(0, i) + net.nextId), 4);
   };
+}
+
+// פאנל המפות בצד שמאל: אפשר להסתיר אותו כדי לראות את המכוניות, והבחירה נזכרת
+let mapsHidden = store.get('mapsHidden', false);
+function applyMapsPanel() {
+  $('#lobby').classList.toggle('mapsHidden', mapsHidden);
+  $('#btnShowMaps').classList.toggle('hidden', !mapsHidden);
+}
+function setMapsHidden(v) {
+  mapsHidden = v;
+  store.set('mapsHidden', v);
+  applyMapsPanel();
+  if (!v && screen === 'lobby') renderLobby(); // התמונות נטענות רק כשהפאנל גלוי
 }
 
 function enterLobby() {
@@ -1654,6 +1668,9 @@ $('#btnJoin').onclick = async () => {
   } catch (e) { $('#menuErr').textContent = errText(e); }
 };
 $('#btnFind').onclick = findGroup;
+$('#btnHideMaps').onclick = () => setMapsHidden(true);
+$('#btnShowMaps').onclick = () => setMapsHidden(false);
+applyMapsPanel();
 $('#btnPublic').onclick = () => { if (!net.isHost) return; net.setPublic(!net.isPublic, !!game); seeking = false; renderLobby(); toast(net.isPublic ? 'החדר ציבורי – שחקנים שמחפשים קבוצה יכולים להצטרף' : 'החדר פרטי – רק עם הקוד או הקישור', 4000); };
 $('#code').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#btnJoin').click(); });
 $('#btnSolo').onclick = () => { readName(); sfx.init(); net.solo(me); pickNext(); enterLobby(); };

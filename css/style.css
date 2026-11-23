@@ -400,3 +400,14 @@ body.touch #nitro { top: 44px; left: 14px; width: 130px; }
 #mapPanel #levels h4 { margin: 10px 0 2px; font-size: 14px; opacity: 1; color: var(--orange); font-weight: 800; }
 .map { position: relative; }
 .map .newTrap { position: absolute; top: 4px; right: 4px; left: 4px; font-style: normal; font-size: 10px; font-weight: 800; background: rgba(255, 51, 85, .9); color: #fff; border-radius: 5px; padding: 1px 4px; pointer-events: none; }
+
+/* הסתרת פאנל המפות בלובי, כדי לראות את המכוניות */
+.mapHead { display: flex; align-items: center; gap: 10px; }
+.mapHead h3 { flex: 1; min-width: 0; }
+.mapHead .chip { flex: none; }
+#lobby.mapsHidden #mapPanel { display: none; }
+#btnShowMaps { position: fixed; left: 0; top: 22px; transform: skewX(-9deg); border-radius: 0 10px 10px 0; padding: 14px 16px 14px 12px; pointer-events: auto; z-index: 11; max-width: 46vw; }
+#btnShowMaps span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 40vw; }
+@media (max-width: 900px) {
+  #btnShowMaps { top: auto; bottom: 14px; transform: skewX(-9deg); }
+}

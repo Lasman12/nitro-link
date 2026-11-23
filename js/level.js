@@ -2,8 +2,8 @@
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { G_WORLD, G_CAR, G_KIN } from './car.js?v=1795464850';
-import { tex } from './fx.js?v=1795464850';
+import { G_WORLD, G_CAR, G_KIN } from './car.js?v=1795468522';
+import { tex } from './fx.js?v=1795468522';
 
 export const CHAIN_LEN = 14;
 

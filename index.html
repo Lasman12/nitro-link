@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;600;800;900&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=1795464850">
+<link rel="stylesheet" href="css/style.css?v=1795468522">
 <script type="importmap">
 {
   "imports": {
@@ -177,9 +177,10 @@
     </div>
   </div>
   <div class="panel wide" id="mapPanel">
-    <h3 id="levelsTitle">שלב</h3>
+    <div class="mapHead"><h3 id="levelsTitle">שלב</h3><button id="btnHideMaps" class="chip" title="הסתר כדי לראות את המכוניות">הסתר ◀</button></div>
     <div id="levels"></div>
   </div>
+  <button id="btnShowMaps" class="btn primary small hidden"><span>▶ מפות</span></button>
 </section>
 
 <!-- HUD -->
@@ -241,6 +242,6 @@
 </div>
 
 <div id="toast"></div>
-<script type="module" src="js/main.js?v=1795464850"></script>
+<script type="module" src="js/main.js?v=1795468522"></script>
 </body>
 </html>

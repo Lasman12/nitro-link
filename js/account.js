@@ -1,6 +1,6 @@
 // חשבונות (שם משתמש + סיסמה), התקדמות, שיאים אישיים, XP וטבלת שיאים.
 // שני מצבים: מקומי (localStorage, ברירת מחדל) או מקוון דרך Firebase (כשממלאים את js/config.js).
-import { FIREBASE } from './config.js?v=1794772911';
+import { FIREBASE } from './config.js?v=1795464850';
 
 const ONLINE = !!(FIREBASE.apiKey && FIREBASE.databaseURL);
 const DB = (FIREBASE.databaseURL || '').replace(/\/+$/, '');
@@ -277,7 +277,7 @@ export class Account {
     const str = (v) => String(v || '').slice(0, 40), num = (v) => Math.max(0, Math.round(Number(v) || 0));
     for (const [k, e] of Object.entries(data.race || {}).slice(0, 300)) {
       const cur = lb.race[k], n = { name: str(e.name), level: num(e.level), xp: num(e.xp), tr: num(e.tr), best: {} };
-      for (const [bk, bv] of Object.entries(e.best || {}).slice(0, 40)) if (/^l\d{1,2}$/.test(bk) && num(bv)) n.best[bk] = num(bv);
+      for (const [bk, bv] of Object.entries(e.best || {}).slice(0, 220)) if (/^l\d{1,3}$/.test(bk) && num(bv)) n.best[bk] = num(bv);
       if (!n.name) continue;
       if (!cur || n.level > cur.level || (n.level === cur.level && n.xp > cur.xp)) lb.race[safeKey(k)] = n;
     }

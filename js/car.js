@@ -1,7 +1,7 @@
 // מכונית: פיזיקה ארקיידית (מתלים בקרני-ריי, קפיצה, בוסט, שליטה באוויר) + מודל תלת-ממדי להתאמה אישית
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
-import { GRADS, FEATHERS } from './items.js?v=1794772911';
+import { GRADS, FEATHERS } from './items.js?v=1795464850';
 
 export const G_WORLD = 1, G_CAR = 2, G_KIN = 4, G_REMOTE = 8;
 
@@ -95,7 +95,7 @@ export class CarPhysics {
           const comp = RAY - res.distance;
           av.cross(r, pv); pv.vadd(vel, pv);
           const hb = res.body;
-          if (hb && hb.type !== CANNON.Body.STATIC) {
+          if (hb && (hb.type !== CANNON.Body.STATIC || hb.belt)) {
             res.hitPointWorld.vsub(hb.position, tmp);
             hb.angularVelocity.cross(tmp, gv); gv.vadd(hb.velocity, gv);
             pv.vsub(gv, pv);

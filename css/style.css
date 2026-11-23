@@ -395,3 +395,8 @@ body.touch #emotes { top: 8px; right: 104px; flex-direction: row; }
 body.touch #rank { font-size: 26px; top: 8px; left: 14px; }
 body.touch #rank small { font-size: 14px; }
 body.touch #nitro { top: 44px; left: 14px; width: 130px; }
+
+/* לובי: כותרות דרגת קושי וסימון מלכודת חדשה */
+#mapPanel #levels h4 { margin: 10px 0 2px; font-size: 14px; opacity: 1; color: var(--orange); font-weight: 800; }
+.map { position: relative; }
+.map .newTrap { position: absolute; top: 4px; right: 4px; left: 4px; font-style: normal; font-size: 10px; font-weight: 800; background: rgba(255, 51, 85, .9); color: #fff; border-radius: 5px; padding: 1px 4px; pointer-events: none; }

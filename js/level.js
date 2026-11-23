@@ -2,8 +2,8 @@
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { G_WORLD, G_CAR, G_KIN } from './car.js?v=1794772911';
-import { tex } from './fx.js?v=1794772911';
+import { G_WORLD, G_CAR, G_KIN } from './car.js?v=1795464850';
+import { tex } from './fx.js?v=1795464850';
 
 export const CHAIN_LEN = 14;
 
@@ -25,6 +25,13 @@ const CHAIN_TH = [
   { n: 'ירוק', floor: 0x2f5f3a, ramp: 0xff8a2b, wall: 0x183020, hazard: 0xff3355, trimA: 0x7dff5a, trimB: 0xffd21a, sky: [0x06301e, 0x3a9a6a, 0x030a06], sun: 0xf0ffd0, sunI: 2.0, hemi: 0.9 },
   TH[6], TH[8], TH[3],
 ];
+// ערכות נוספות לשלבים 61 ומעלה (השלבים הקודמים נשארים בדיוק כמו שהיו)
+const TH_X = [
+  ...TH,
+  { n: 'סערה', floor: 0x3a4250, ramp: 0xffd21a, wall: 0x1e232c, hazard: 0xffd21a, trimA: 0x9fd8ff, trimB: 0xffe14d, sky: [0x0a0f1a, 0x3a4a66, 0x05070c], sun: 0xd8e6ff, sunI: 1.8, hemi: 0.75 },
+  { n: 'רובי', floor: 0x5a1028, ramp: 0xff4f6e, wall: 0x2a0612, hazard: 0xffd21a, trimA: 0xff2d55, trimB: 0xffb3c1, sky: [0x1a0410, 0x8a1f3a, 0x050103], sun: 0xffc0c8, sunI: 2.0, hemi: 0.75 },
+  { n: 'אורניום', floor: 0x2a3a10, ramp: 0xc8ff1a, wall: 0x141c08, hazard: 0xb14dff, trimA: 0xc8ff1a, trimB: 0x7dff5a, sky: [0x050a02, 0x3a5a10, 0x020301], sun: 0xe0ffb0, sunI: 1.8, hemi: 0.7 },
+];
 const DECOR = ['cubes', 'towers', 'pyramids', 'planets', 'rings', 'pillars'];
 const FLOORS = ['grid', 'tiles', 'lanes'];
 const COLOR_KEYS = ['floor', 'ramp', 'wall', 'hazard', 'trimA', 'trimB'];
@@ -37,7 +44,7 @@ function themeFor(base, k) {
   T.floorTex = FLOORS[k % FLOORS.length];
   return T;
 }
-export const RACE_LEVELS = 60, CHAIN_LEVELS = 20, VS_MAPS = 399, BATTLE_MAPS = 4;
+export const RACE_LEVELS = 200, CHAIN_LEVELS = 20, VS_MAPS = 399, BATTLE_MAPS = 4;
 // תת-קטגוריות של מירוץ החברים. מספר המפה מקודד: קטגוריה * 100 + מספר
 export const VS_CATS = [{ n: 'רגיל', count: 30 }, { n: 'ארוך ומפותל', count: 6 }, { n: 'קרח', count: 6 }, { n: 'קארט · 3 הקפות', count: 6 }, { n: 'גשרים וקיצורים', count: 12 }];
 // מיני גיימס: תופסת, תפוס את הכתר, הרצפה נעלמת – וגם מירוצי הקרח
@@ -48,6 +55,26 @@ export const vsSplit = (level) => { const c = Math.max(0, Math.min(4, Math.floor
 const ONE = new THREE.Vector3(1, 1, 1), UP = new THREE.Vector3(0, 1, 0);
 const hdr = (hex, k = 2.3) => new THREE.Color(hex).multiplyScalar(k);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+// מישור אופקי עם טקסטורה שחוזרת על עצמה כל tile מטר (חצים של מסוע / רוח)
+function tiledPlane(wx, hz, tile) {
+  const g = new THREE.PlaneGeometry(wx, hz).rotateX(Math.PI / 2), uv = g.attributes.uv;
+  for (let i = 0; i < uv.count; i++) uv.setXY(i, (uv.getX(i) * wx) / tile, (uv.getY(i) * hz) / tile);
+  return g;
+}
+// תזמון המלכודות: מיקום במחזור (0..1) לפי זמן המירוץ המסונכרן, כך שכל השחקנים רואים אותו דבר
+const cyc = (t, per, ph) => ((((t + ph) % per) + per) % per) / per;
+const laserOn = (z, t) => !z.period || cyc(t, z.period, z.phase) < z.on;
+const tileOn = (z, t) => cyc(t, z.period, z.phase) < z.on;
+const CRUSH_TOP = 6.5;
+// גובה תחתית המכבש: למעלה, טריקה מהירה, רגע למטה, ועלייה איטית
+function crushH(z, t) {
+  const u = cyc(t, z.period, z.phase);
+  if (u < 0.55) return CRUSH_TOP;
+  if (u < 0.63) { const k = (u - 0.55) / 0.08; return CRUSH_TOP * (1 - k * k); }
+  if (u < 0.75) return 0;
+  return CRUSH_TOP * ((u - 0.75) / 0.25);
+}
 
 function boxGeo(sx, sy, sz, tile = 4) {
   const g = new THREE.BoxGeometry(sx, sy, sz);
@@ -78,6 +105,8 @@ class Builder {
     // במקום להיסחף אל מתחת לפלטפורמה ולהיתקע שם
     this.thick = o.chain ? 24 : 1.2;
     this.mats = {};
+    this.hz = { bumpers: [], winds: [], lasers: [], crushers: [], tiles: [] }; // מלכודות מיוחדות
+    this.extraMats = []; this.texs = [];
     if (this.dry) return;
     const std = (m) => new THREE.MeshStandardMaterial({ metalness: 0.15, roughness: 0.72, envMapIntensity: 0.6, ...m });
     const ft = tex[T.floorTex || 'grid'];
@@ -320,6 +349,209 @@ class Builder {
     return this.stateful(d, 3.5 / rise, (t) => (solo ? ((t % 10) + 10) % 10 > 5 : inputs.some((i) => btn[i].pressed)));
   }
 
+  // ---------- מלכודות מיוחדות (שלבים 61 ומעלה) ----------
+  hzMat(key) {
+    if (this.mats[key] || this.dry) return this.mats[key];
+    const T = this.T, add = { transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide };
+    const clone = () => { const t = tex.chevron.clone(); t.needsUpdate = true; this.texs.push(t); return t; };
+    if (key === 'beltFloor') this.mats[key] = new THREE.MeshStandardMaterial({ map: tex.lanes, color: 0x2a2f3a, roughness: 0.9, metalness: 0.1 });
+    if (key === 'beltFx') this.mats[key] = new THREE.MeshBasicMaterial({ map: (this.beltTex = clone()), color: hdr(T.trimA, 2.2), ...add });
+    if (key === 'windFx') this.mats[key] = new THREE.MeshBasicMaterial({ map: (this.windTex = clone()), color: hdr(0xbfe6ff, 1.2), opacity: 0.35, ...add });
+    if (key === 'laser') this.mats[key] = new THREE.MeshBasicMaterial({ color: hdr(0xff1a2e, 3.2), transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false });
+    if (key === 'bumper') this.mats[key] = new THREE.MeshStandardMaterial({ color: T.hazard, emissive: T.hazard, emissiveIntensity: 0.6, metalness: 0.4, roughness: 0.3 });
+    return this.mats[key];
+  }
+  // קטע שהרצפה שלו היא המלכודת: רק מסמן את המסלול (לבוטים ולתמונה) ומקדם את הצב
+  ghost(len, o = {}) {
+    const f = this.F(), mid = this.p.clone().addScaledVector(f, len / 2);
+    this.segs.push({ x: mid.x, z: mid.z, yaw: this.yaw, w: o.w || 14, len });
+    this.mark(len, 0, { gap: !!o.gap });
+    this.p.addScaledVector(f, len);
+  }
+  edges(len, w) {
+    for (const s of [-1, 1]) this.addGeo('trimA', new THREE.BoxGeometry(0.28, 0.1, len), this.at(len / 2, s * (w / 2 - 0.14), 0.03), this.quat());
+  }
+
+  // מסוע: רצפה שזזה אחורה ('back') או הצידה (1 / -1). הצמיגים נאחזים בה, אז היא סוחפת את המכונית
+  belt(len, w, dir, speed) {
+    if (!this.dry) {
+      const f = this.F(), l = this.Lf(), q = this.quat(), c = this.at(len / 2, 0, -0.6);
+      this.hzMat('beltFloor'); this.hzMat('beltFx');
+      this.addGeo('beltFloor', boxGeo(w, 1.2, len), c, q);
+      const body = new CANNON.Body({
+        mass: 0, material: this.ctx.groundMat, shape: new CANNON.Box(new CANNON.Vec3(w / 2, 0.6, len / 2)),
+        position: new CANNON.Vec3(c.x, c.y, c.z), quaternion: new CANNON.Quaternion(q.x, q.y, q.z, q.w), collisionFilterGroup: G_WORLD, collisionFilterMask: G_CAR,
+      });
+      const v = dir === 'back' ? f.multiplyScalar(-speed) : l.multiplyScalar(dir * speed);
+      body.belt = true;
+      body.velocity.set(v.x, 0, v.z);
+      this.ctx.world.addBody(body);
+      const side = dir !== 'back';
+      this.addGeo('beltFx', tiledPlane(side ? len : w - 1, side ? w - 1 : len, 3), this.at(len / 2, 0, 0.04), this.quat(0, dir === 'back' ? Math.PI : (dir * Math.PI) / 2));
+      this.edges(len, w);
+      this.minY = Math.min(this.minY, c.y - 2);
+    }
+    this.ghost(len, { w });
+  }
+
+  // פגוש פינבול: מעיף כל מכונית שמתקרבת
+  bumper(a, l, power) {
+    const pos = this.at(a, l, 0), z = { pos, r: 1.8, power, flash: 0, g: null };
+    this.hz.bumpers.push(z);
+    if (this.dry) return;
+    this.body(this.at(a, l, 0.9), [2.2, 1.8, 2.2], this.quat(0, Math.PI / 4));
+    const g = new THREE.Group();
+    const cyl = new THREE.Mesh(new THREE.CylinderGeometry(1.7, 1.9, 1.5, 24), this.hzMat('bumper'));
+    cyl.position.y = 0.75; cyl.castShadow = true;
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(1.75, 0.12, 8, 28).rotateX(Math.PI / 2), this.mats.trimA);
+    ring.position.y = 1.5;
+    const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.9, 0.9, 0.12, 20), this.mats.trimB);
+    cap.position.y = 1.56;
+    g.add(cyl, ring, cap);
+    g.position.copy(pos);
+    this.group.add(g);
+    z.g = g;
+  }
+
+  // רוח צד: מאוורר ענק שדוחף לצד dir. בתוך אזור הרוח גם האחיזה חלשה, כך שהמכונית מחליקה
+  wind(len, w, dir, power) {
+    const z = { pos: this.at(len / 2, 0, 0), f: this.F(), l: this.Lf(), len, w, dir, power, blades: null };
+    this.hz.winds.push(z);
+    if (this.dry) return;
+    const q = this.quat(), side = -dir * (w / 2 + 6), fc = this.at(len / 2, side, 3.6);
+    this.addGeo('wall', boxGeo(0.9, 14, 0.9), this.at(len / 2, side, 3.6 - 7), q);
+    this.addGeo('wall', new THREE.TorusGeometry(3.3, 0.4, 8, 32).rotateY(Math.PI / 2), fc, q);
+    this.addGeo('trimB', new THREE.TorusGeometry(3.3, 0.12, 6, 32).rotateY(Math.PI / 2), fc.clone().addScaledVector(z.l, dir * 0.45), q);
+    const outer = new THREE.Group(), blades = new THREE.Group();
+    for (let k = 0; k < 4; k++) { const m = new THREE.Mesh(new THREE.BoxGeometry(0.2, 5.8, 0.8), this.mats.wall); m.rotation.x = (k * Math.PI) / 4; blades.add(m); }
+    blades.add(new THREE.Mesh(new THREE.SphereGeometry(0.6, 12, 8), this.mats.trimB));
+    outer.add(blades);
+    outer.position.copy(fc); outer.quaternion.copy(q);
+    this.group.add(outer);
+    z.blades = blades;
+    this.hzMat('windFx');
+    this.addGeo('windFx', tiledPlane(len, w + 8, 4), this.at(len / 2, 0, 1.6), this.quat(0, (dir * Math.PI) / 2));
+  }
+
+  // לייזר: low = קרן נמוכה שקופצים מעליה (תמיד דולקת); אחרת וילון לייזר שנדלק ונכבה
+  laser(a, w, o = {}) {
+    const { period = 0, on = 1, phase = 0, low = false } = o;
+    const z = { pos: this.at(a, 0, 0), f: this.F(), l: this.Lf(), w, period, on, phase, y0: low ? 0.55 : 0, y1: low ? 1.0 : 5, g: null };
+    this.hz.lasers.push(z);
+    if (this.dry) return;
+    const q = this.quat(), H = low ? 1.6 : 5.6;
+    for (const s of [-1, 1]) {
+      this.addGeo('wall', boxGeo(0.6, H, 0.6), this.at(a, s * (w / 2 + 0.5), H / 2), q);
+      this.addGeo('trimB', new THREE.BoxGeometry(0.7, 0.12, 0.7), this.at(a, s * (w / 2 + 0.5), H + 0.06), q);
+    }
+    const g = new THREE.Group(), mat = this.hzMat('laser');
+    for (const y of low ? [0.78] : [0.45, 1.35, 2.25, 3.15, 4.05, 4.95]) {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(w + 1, 0.09, 0.09), mat);
+      m.position.y = y;
+      g.add(m);
+    }
+    g.position.copy(z.pos); g.quaternion.copy(q);
+    this.group.add(g);
+    z.g = g;
+  }
+
+  // מכבש: בלוק כבד שנטרק מלמעלה. מתחתיו יש סימון אדום שמתחזק רגע לפני הטריקה
+  crusher(a, l, size, o = {}) {
+    const { period = 3, phase = 0 } = o, [cw, cl] = size;
+    const z = { pos: this.at(a, l, 0), f: this.F(), l: this.Lf(), w: cw, len: cl, period, phase, head: null, plate: null };
+    this.hz.crushers.push(z);
+    if (this.dry) return;
+    const q = this.quat(), top = CRUSH_TOP + 3.4;
+    for (const s of [-1, 1]) this.addGeo('wall', boxGeo(0.8, top, 0.8), this.at(a, l + s * (cw / 2 + 0.6), top / 2), q);
+    this.addGeo('wall', boxGeo(cw + 2, 0.8, 1), this.at(a, l, top), q);
+    this.addGeo('trimB', new THREE.BoxGeometry(cw + 2.05, 0.12, 1.05), this.at(a, l, top + 0.45), q);
+    const head = new THREE.Mesh(boxGeo(cw, 2.2, cl, 2), this.mats.hazard);
+    head.castShadow = true; head.quaternion.copy(q);
+    this.group.add(head);
+    const pm = new THREE.MeshBasicMaterial({ color: hdr(0xff2d1a, 2), transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
+    this.extraMats.push(pm);
+    const plate = new THREE.Mesh(new THREE.PlaneGeometry(cw, cl).rotateX(Math.PI / 2), pm);
+    plate.position.copy(this.at(a, l, 0.06)); plate.quaternion.copy(q);
+    this.group.add(plate);
+    z.head = head; z.plate = plate;
+  }
+
+  // אריח מהבהב: נעלם ומופיע לפי שעון. רגע לפני שהוא נעלם הוא מהבהב באדום
+  tile(len, w, o) {
+    const z = { pos: this.at(len / 2, 0, 0), f: this.F(), l: this.Lf(), len, w, period: o.period, on: o.on, phase: o.phase, body: null, mat: null };
+    this.hz.tiles.push(z);
+    if (!this.dry) {
+      const q = this.quat(), c = this.at(len / 2, 0, -0.5);
+      const body = new CANNON.Body({
+        mass: 0, material: this.ctx.groundMat, shape: new CANNON.Box(new CANNON.Vec3(w / 2, 0.5, len / 2 - 0.15)),
+        position: new CANNON.Vec3(c.x, c.y, c.z), quaternion: new CANNON.Quaternion(q.x, q.y, q.z, q.w), collisionFilterGroup: G_WORLD, collisionFilterMask: G_CAR,
+      });
+      this.ctx.world.addBody(body);
+      const mat = this.mats.floor.clone();
+      mat.transparent = true; mat.emissive = new THREE.Color(0xff2d1a); mat.emissiveIntensity = 0;
+      this.extraMats.push(mat);
+      const mesh = new THREE.Mesh(boxGeo(w, 1, len - 0.3), mat);
+      mesh.position.copy(c); mesh.quaternion.copy(q); mesh.receiveShadow = true;
+      this.group.add(mesh);
+      z.body = body; z.mat = mat;
+      this.edges(len, w);
+      this.minY = Math.min(this.minY, c.y - 2);
+    }
+    this.ghost(len, { w });
+  }
+
+  // גשר מתנדנד: פלטפורמה צרה שמתגלגלת ימינה ושמאלה
+  tilter(len, w, o) {
+    const { amp, period, phase } = o;
+    if (!this.dry) {
+      const c = this.at(len / 2, 0, -0.5), qb = this.quat(), qz = new THREE.Quaternion(), Z = new THREE.Vector3(0, 0, 1);
+      const mesh = new THREE.Mesh(boxGeo(w, 1, len), this.mats.ramp);
+      for (const s of [-1, 1]) { const t = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.1, len), this.mats.trimB); t.position.set(s * (w / 2 - 0.14), 0.53, 0); mesh.add(t); }
+      this.kin(mesh, [{ size: [w, 1, len] }], (t, p, q) => { p.copy(c); q.copy(qb).multiply(qz.setFromAxisAngle(Z, amp * Math.sin((t * Math.PI * 2) / period + phase))); });
+      this.minY = Math.min(this.minY, c.y - 2);
+    }
+    this.ghost(len, { w });
+  }
+
+  // במה מסתובבת: ריבוע שמסתובב מעל תהום. arms = מוט מסתובב נוסף מעליה
+  turntable(S, speed, arms) {
+    if (!this.dry) {
+      const c = this.at(S / 2, 0, -0.5), yaw0 = this.yaw;
+      const mesh = new THREE.Mesh(boxGeo(S, 1, S), this.mats.floor);
+      const hub = new THREE.Mesh(new THREE.CylinderGeometry(1.3, 1.3, 0.16, 24), this.mats.trimB);
+      hub.position.y = 0.55; mesh.add(hub);
+      for (let k = 0; k < 4; k++) {
+        const t = new THREE.Mesh(new THREE.BoxGeometry(S, 0.1, 0.3), this.mats.trimA);
+        const a = (k * Math.PI) / 2;
+        t.position.set(Math.sin(a) * (S / 2 - 0.15), 0.53, Math.cos(a) * (S / 2 - 0.15));
+        t.rotation.y = a;
+        mesh.add(t);
+      }
+      this.kin(mesh, [{ size: [S, 1, S] }], (t, p, q) => { p.copy(c); q.setFromAxisAngle(UP, yaw0 + speed * t); });
+      if (arms) this.spinner(S / 2, 0, { len: S - 3, speed: -speed * 2.2 });
+      this.minY = Math.min(this.minY, c.y - 2);
+    }
+    this.ghost(S, { w: S });
+  }
+
+  // קיר עם פתח שזז מצד לצד – צריך לעבור בדיוק דרך החור
+  slideGate(a, w, o) {
+    const { hole, period, phase } = o;
+    if (this.dry) return;
+    const P = w, h = 5, amp = Math.max(0, (w - hole) / 2 - 0.4), base = this.at(a, 0, h / 2), q = this.quat(), ax = this.Lf(), off = hole / 2 + P / 2;
+    const g = new THREE.Group();
+    for (const s of [-1, 1]) {
+      const m = new THREE.Mesh(boxGeo(P, h, 1, 2), this.mats.hazard);
+      m.position.x = s * off;
+      const t = new THREE.Mesh(new THREE.BoxGeometry(P, 0.12, 1.06), this.mats.trimA);
+      t.position.set(s * off, h / 2 + 0.06, 0);
+      const e = new THREE.Mesh(new THREE.BoxGeometry(0.18, h, 1.1), this.mats.trimB);
+      e.position.x = (s * hole) / 2;
+      g.add(m, t, e);
+    }
+    this.kin(g, [{ size: [P, h, 1], off: [-off, 0, 0] }, { size: [P, h, 1], off: [off, 0, 0] }], (t, p, qq) => { p.copy(base).addScaledVector(ax, amp * Math.sin((t * Math.PI * 2) / period + phase)); qq.copy(q); });
+  }
+
   decor() {
     let seed = 7 + (this.T.floor % 97);
     const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
@@ -374,16 +606,20 @@ class Builder {
     for (const key in this.buckets) {
       const m = new THREE.Mesh(mergeGeometries(this.buckets[key]), this.mats[key]);
       for (const g of this.buckets[key]) g.dispose();
-      const solid = !key.startsWith('trim') && key !== 'pad';
+      const solid = !key.startsWith('trim') && !['pad', 'beltFx', 'windFx'].includes(key);
       m.castShadow = solid; m.receiveShadow = solid;
       this.group.add(m);
     }
     this.ctx.scene.add(this.group);
-    const { cps, pads, dyn, buttons, finish, group, mats, path, T, route, iceZones } = this;
+    const { cps, pads, dyn, buttons, finish, group, mats, path, T, route, iceZones, hz, extraMats, texs, beltTex, windTex } = this;
     const tq = new THREE.Quaternion();
+    let tNow = 0;
+    // מיקום נקודה ביחס לאזור: [לאורך המסלול, לרוחב, גובה]
+    const loc = (z, p) => { const dx = p.x - z.pos.x, dz = p.z - z.pos.z; return [dx * z.f.x + dz * z.f.z, dx * z.l.x + dz * z.l.z, p.y - z.pos.y]; };
+    const inWind = (z, p) => { const [a, l, dy] = loc(z, p); return Math.abs(a) < z.len / 2 && Math.abs(l) < z.w / 2 + 6 && dy > -8 && dy < 10; };
     const green = hdr(0x2bff7a, 1.4), idle = hdr(this.T.trimB, 1.4);
     return {
-      sky: T.sky, look: T, path, route, group, cps, pads, dyn, buttons, finish, killY: this.minY - 40,
+      sky: T.sky, look: T, path, route, group, hz, cps, pads, dyn, buttons, finish, killY: this.minY - 40,
 
       inZone(z, p) {
         const dx = p.x - z.pos.x, dy = p.y - z.pos.y, dz = p.z - z.pos.z;
@@ -399,7 +635,49 @@ class Builder {
           const dx = p.x - z.pos.x, dz = p.z - z.pos.z, dy = p.y - z.pos.y;
           if (dy > -1 && dy < 3 && Math.abs(dx * z.f.x + dz * z.f.z) < z.len / 2 && Math.abs(dx * z.l.x + dz * z.l.z) < z.w / 2) return true;
         }
+        for (const z of hz.winds) if (inWind(z, p)) return true; // ברוח הרצפה רטובה וחלקה
         return false;
+      },
+
+      // מלכודות על מכונית (שלי או של בוט). 0 = כלום, 1 = נפגע (חוזר לנקודת ביקורת), 2 = הועף מפגוש
+      hazards(b, t, dt) {
+        const p = b.position, v = b.velocity;
+        let out = 0;
+        for (const z of hz.bumpers) {
+          const dx = p.x - z.pos.x, dz = p.z - z.pos.z, dd = Math.hypot(dx, dz);
+          if (dd > z.r + 2 || Math.abs(p.y - z.pos.y - 0.8) > 2 || t - (b.bumpT ?? -9) < 0.2) continue;
+          const nx = dx / (dd || 1), nz = dz / (dd || 1), k = Math.max(0, -(v.x * nx + v.z * nz)) + z.power;
+          v.x += nx * k; v.z += nz * k; v.y = Math.max(v.y, 3.5);
+          b.bumpT = t; z.flash = 1; out = 2;
+        }
+        for (const z of hz.winds) if (inWind(z, p)) { const k = z.dir * z.power * dt; v.x += z.l.x * k; v.z += z.l.z * k; }
+        for (const z of hz.lasers) {
+          if (!laserOn(z, t)) continue;
+          const [a, l, dy] = loc(z, p);
+          if (Math.abs(a) < 2.1 && Math.abs(l) < z.w / 2 + 0.6 && dy - 0.3 < z.y1 && dy + 0.45 > z.y0) return 1;
+        }
+        for (const z of hz.crushers) {
+          const [a, l, dy] = loc(z, p);
+          if (Math.abs(a) < z.len / 2 + 1.8 && Math.abs(l) < z.w / 2 + 0.8 && dy > -1 && crushH(z, t) < dy + 0.45) return 1;
+        }
+        return out;
+      },
+      // לבוטים: מה מחכה בנקודה מסוימת בזמן t ('jump' = לקפוץ, 'stop' = לחכות)
+      danger(x, zz, y, t) {
+        const p = { x, y, z: zz };
+        for (const z of hz.lasers) {
+          const [a, l, dy] = loc(z, p);
+          if (Math.abs(a) < 2.6 && Math.abs(l) < z.w / 2 + 1 && dy > -1 && dy < 3) { if (!z.period) return 'jump'; if (laserOn(z, t)) return 'stop'; }
+        }
+        for (const z of hz.crushers) {
+          const [a, l, dy] = loc(z, p);
+          if (Math.abs(a) < z.len / 2 + 2 && Math.abs(l) < z.w / 2 + 1 && dy > -1 && dy < 3 && crushH(z, t) < 2.4) return 'stop';
+        }
+        for (const z of hz.tiles) {
+          const [a, l, dy] = loc(z, p);
+          if (Math.abs(a) < z.len / 2 && Math.abs(l) < z.w / 2 && dy > -1 && dy < 3 && !tileOn(z, t)) return 'stop';
+        }
+        return null;
       },
       // גובה המסלול הקרוב ביותר – כדי לזהות נפילה מהר, גם בחלקים גבוהים של המסלול
       floorNear(p) {
@@ -418,6 +696,8 @@ class Builder {
 
       // צעד פיזיקה: t = זמן המירוץ המסונכרן, cars = מיקומי כל המכוניות
       step(t, H, cars) {
+        tNow = t;
+        for (const z of hz.tiles) z.body.collisionResponse = tileOn(z, t); // אריח כבוי: אין עליו רצפה (גם לא לקרני המתלים)
         for (const b of buttons) {
           b.pressed = false;
           for (const c of cars) if (Math.hypot(c.x - b.pos.x, c.z - b.pos.z) < b.r && Math.abs(c.y - b.pos.y - 0.7) < 1.6) { b.pressed = true; break; }
@@ -445,6 +725,26 @@ class Builder {
       // עדכון ויזואלי פעם בפריים
       update(dt, reached) {
         tex.chevron.offset.y -= dt * 1.6;
+        if (beltTex) beltTex.offset.y -= dt * 2.5;
+        if (windTex) windTex.offset.y -= dt * 3;
+        const t = tNow;
+        for (const z of hz.bumpers) { z.flash = Math.max(0, z.flash - dt * 4); const s = 1 + z.flash * 0.25; z.g.scale.set(s, 1 - z.flash * 0.2, s); }
+        for (const z of hz.winds) z.blades.rotation.x += dt * 9 * z.dir;
+        for (const z of hz.lasers) {
+          const on = laserOn(z, t), warn = !on && z.period && cyc(t, z.period, z.phase) > 1 - 0.45 / z.period;
+          z.g.visible = on || (warn && Math.sin(t * 60) > 0);
+        }
+        for (const z of hz.crushers) {
+          const u = cyc(t, z.period, z.phase);
+          z.head.position.copy(z.pos).y += crushH(z, t) + 1.1;
+          z.plate.material.opacity = u > 0.3 && u < 0.55 ? ((u - 0.3) / 0.25) * 0.7 * (0.75 + 0.25 * Math.sin(t * 30)) : u >= 0.55 && u < 0.75 ? 0.85 : 0;
+        }
+        for (const z of hz.tiles) {
+          const on = tileOn(z, t), warn = on && cyc(t, z.period, z.phase) > z.on - 0.7 / z.period;
+          z.mat.opacity = on ? 1 : 0.12;
+          z.mat.depthWrite = on;
+          z.mat.emissiveIntensity = warn ? 0.6 + 0.4 * Math.sin(t * 25) : 0;
+        }
         for (const d of dyn) { d.mesh.position.copy(d.body.position); d.mesh.quaternion.copy(d.body.quaternion); }
         for (const b of buttons) {
           b.mesh.material.emissive.setHex(b.pressed ? 0x2bff7a : 0xff5a1f);
@@ -459,6 +759,8 @@ class Builder {
         for (const b of buttons) b.mesh.material.dispose();
         for (const c of cps) c.mesh?.material.dispose();
         for (const d of dyn) if (d.mesh.material && !Object.values(mats).includes(d.mesh.material)) d.mesh.material.dispose();
+        for (const m of extraMats) m.dispose();
+        for (const t of texs) t.dispose();
         group.removeFromParent();
       },
     };
@@ -727,7 +1029,7 @@ const R_UNLOCK = { straight: 1, hurdles: 1, rampJump: 1, pillars: 2, bumps: 3, c
 
 // מסלול מירוץ כללי. פניות: המסלול פונה רק ימינה/שמאלה ביחס לכיוון ההתחלה ולעולם לא חוזר אחורה, כך שהוא לא חוצה את עצמו
 function genTrack(b, o) {
-  const { r, d, n, w, pool, fresh = [], cpEvery = 1, turns = true, combo = 0, turnMin = 2, turnVar = 3 } = o;
+  const { r, d, n, w, pool, fresh = [], cpEvery = 1, turns = true, combo = 0, turnMin = 2, turnVar = 3, e = 0 } = o;
   b.cp(14, w + 4); b.arch(27, w + 4, 'start');
   b.seg(34, { w: w + 4 });
   b.pad(10, 0);
@@ -741,7 +1043,7 @@ function genTrack(b, o) {
     if (i % cpEvery === 0) b.cp(8, w);
     if (r() < combo) b.block(10, 0, [w, 1, 1.2]); // בשלבים הקשים: משוכה גם בקטעי החיבור
     b.seg(18, { w });
-    R[k](b, d, r, w);
+    (R[k] || TR[k])(b, d, r, w, e);
     since++;
     if (turns && since >= nextTurn && i < n - 1) {
       const sgn = h === 0 ? (r() > 0.5 ? 1 : -1) : -h;
@@ -759,6 +1061,7 @@ function genTrack(b, o) {
 // קושי: עד שלב 10 עלייה מתונה, ומשם והלאה עקומה תלולה יותר
 const raceDiff = (L) => (L <= 10 ? ((L - 1) / 9) * 0.42 : 0.47 + 0.53 * Math.pow((L - 10) / 20, 0.75));
 function genRace(b, L) {
+  if (L > 60) { genHard(b, L); return; }
   if (L > 30) {
     // שלבים 31–60: ארוכים, עם הקטעים המתקדמים (שניים מהם מובטחים בתחילת כל שלב)
     const hh = (L - 30) / 30, rr = rng(L * 7919 + 13), dd = 0.72 + 0.28 * hh;
@@ -775,6 +1078,110 @@ function genRace(b, L) {
     fresh: Object.keys(R_UNLOCK).filter((k) => R_UNLOCK[k] === L && k !== 'straight'),
     cpEvery: d < 0.55 ? 1 : 2, combo: L > 10 ? (d - 0.4) * 0.8 : 0,
   });
+}
+
+// ---------- מלכודות מיוחדות: שלבים 61–200 ----------
+// e = עוצמת המלכודת 0..1 (עולה עם מספר השלב): מהר יותר, צפוף יותר, פחות זמן לטעות
+const TR = {
+  // שדה פגושים בלי קירות: נגיעה מעיפה הצידה, ולפעמים מהמסלול
+  bumpers(b, d, r, w, e) {
+    const W = w + 6, rows = 3 + Math.round(e * 4), pw = lerp(16, 24, e);
+    for (let i = 0; i < rows; i++) for (const l of i % 2 ? [-W * 0.28, W * 0.28] : [(r() - 0.5) * 3]) b.bumper(14 + i * 9, l, pw);
+    b.seg(20 + rows * 9, { w: W });
+  },
+  // מסועים: סוחפים הצידה (צריך לנהוג באלכסון) או אחורה
+  belts(b, d, r, w, e) {
+    const n = 2 + Math.round(e * 2);
+    b.seg(6, { w });
+    for (let i = 0; i < n; i++) {
+      const back = r() < 0.3;
+      b.belt(lerp(14, 20, e), w, back ? 'back' : i % 2 ? 1 : -1, back ? lerp(10, 17, e) : lerp(6, 11, e));
+      b.seg(4, { w });
+    }
+  },
+  // רוח צד מעל איים עם רצפה רטובה
+  crosswind(b, d, r, w, e) {
+    const dir = r() > 0.5 ? 1 : -1, n = 3 + Math.round(e * 2), sl = 13, g = lerp(3, 5.5, e), ww = Math.max(6, w - 2 * e);
+    b.seg(6, { w });
+    b.wind(n * (sl + g) + 4, w, dir, lerp(11, 19, e));
+    for (let i = 0; i < n; i++) { b.seg(sl, { w: ww }); b.gap(g); }
+    b.seg(10, { w });
+  },
+  // אריחים שנעלמים: או גל שמתקדם קדימה (צריך לנסוע בקצב שלו), או לסירוגין (צריך לחכות על אריח)
+  blinkTiles(b, d, r, w, e) {
+    const n = 3 + Math.round(e * 4), T = 8, per = lerp(3.4, 2.4, e), on = lerp(0.68, 0.52, e), v = lerp(17, 24, e), wave = r() < 0.6;
+    b.seg(6, { w });
+    for (let i = 0; i < n; i++) b.tile(T, w, { period: per, on, phase: wave ? -(i * T) / v : (i % 2) * per * 0.5 });
+    b.seg(10, { w });
+  },
+  // לייזרים: וילונות שנדלקים ונכבים, ובין לבין קרן נמוכה שצריך לקפוץ מעליה
+  lasers(b, d, r, w, e) {
+    const n = 2 + Math.round(e * 3), sp = lerp(20, 14, e);
+    for (let i = 0; i < n; i++) {
+      if (i % 2 && e > 0.2) b.laser(12 + i * sp, w, { low: true });
+      else b.laser(12 + i * sp, w, { period: lerp(3.2, 2.4, e), on: lerp(0.4, 0.55, e), phase: r() * 3 });
+    }
+    b.seg(14 + n * sp, { w });
+  },
+  // מכבשים: בהתחלה משאירים נתיב פנוי בצד, בשלבים הקשים מכסים את כל הרוחב
+  crushers(b, d, r, w, e) {
+    const n = 2 + Math.round(e * 2), sp = lerp(17, 13, e), full = e > 0.5;
+    for (let i = 0; i < n; i++) {
+      const cw = full ? w : w * 0.62, off = full ? 0 : ((i % 2 ? 1 : -1) * (w - cw)) / 2;
+      b.crusher(14 + i * sp, off, [cw, 7], { period: lerp(3.4, 2.5, e), phase: r() * 3 });
+    }
+    b.seg(18 + n * sp, { w });
+  },
+  // גשרים מתנדנדים עם פערים ביניהם
+  seesaw(b, d, r, w, e) {
+    const n = 2 + Math.round(e * 2), g = lerp(2, 3.5, e);
+    b.seg(6, { w });
+    for (let i = 0; i < n; i++) { b.gap(g); b.tilter(16, lerp(9, 6, e), { amp: lerp(0.2, 0.38, e), period: lerp(3.6, 2.6, e), phase: r() * 6 }); }
+    b.gap(g); b.seg(10, { w });
+  },
+  // במות מסתובבות מעל תהום
+  turntable(b, d, r, w, e) {
+    const n = 1 + Math.round(e);
+    b.seg(6, { w });
+    for (let i = 0; i < n; i++) { b.gap(3.2); b.turntable(14, (r() > 0.5 ? 1 : -1) * lerp(0.5, 1.0, e), e > 0.6); }
+    b.gap(3.2); b.seg(10, { w });
+  },
+  // קירות עם חור שזז מצד לצד
+  slideGates(b, d, r, w, e) {
+    const n = 2 + Math.round(e * 2), sp = lerp(18, 13, e);
+    for (let i = 0; i < n; i++) b.slideGate(12 + i * sp, w, { hole: lerp(7, 4.6, e), period: lerp(4.6, 2.8, e), phase: r() * 6 });
+    b.seg(16 + n * sp, { w });
+  },
+  // שילובים לשלבים הכי קשים: מסוע צד מתחת לוילונות לייזר
+  beltLasers(b, d, r, w, e) {
+    b.seg(6, { w });
+    for (let i = 0; i < 2; i++) b.laser(8 + i * 14, w, { period: lerp(3, 2.4, e), on: 0.45, phase: r() * 3 });
+    b.belt(30, w, r() > 0.5 ? 1 : -1, lerp(7, 11, e));
+    b.seg(8, { w });
+  },
+  // סופה: אריחים נעלמים בתוך רוח צד
+  stormTiles(b, d, r, w, e) {
+    const n = 4 + Math.round(e * 2), T = 8, per = lerp(3.2, 2.6, e), dir = r() > 0.5 ? 1 : -1;
+    b.seg(6, { w });
+    b.wind(n * T, w, dir, lerp(9, 14, e));
+    for (let i = 0; i < n; i++) b.tile(T, w, { period: per, on: 0.62, phase: -(i * T) / 20 });
+    b.seg(10, { w });
+  },
+};
+// באיזה שלב כל מלכודת מופיעה לראשונה (השלב הזה נפתח בה)
+export const T_UNLOCK = { bumpers: 61, belts: 64, crosswind: 68, blinkTiles: 72, lasers: 77, crushers: 83, seesaw: 90, turntable: 98, slideGates: 106, beltLasers: 140, stormTiles: 160 };
+export const TRAP_NAMES = { bumpers: 'פגושי פינבול', belts: 'מסועים', crosswind: 'רוח צד', blinkTiles: 'אריחים נעלמים', lasers: 'לייזרים', crushers: 'מכבשים', seesaw: 'גשרים מתנדנדים', turntable: 'במות מסתובבות', slideGates: 'קירות עם חור זז', beltLasers: 'מסוע + לייזרים', stormTiles: 'סופה על אריחים' };
+
+// שלבים 61–200: כל המסלול ברמת הקושי המלאה, ובנוסף מלכודות. ככל שהשלב מתקדם –
+// יותר מלכודות, מסלול צר וארוך יותר, פחות נקודות ביקורת ותזמונים מהירים יותר
+function genHard(b, L) {
+  const q = (L - 60) / (RACE_LEVELS - 60), r = rng(L * 7919 + 13), e = 0.15 + 0.85 * q;
+  const traps = Object.keys(T_UNLOCK).filter((k) => T_UNLOCK[k] <= L);
+  const fresh = [...traps.filter((k) => T_UNLOCK[k] === L), traps[(L * 5) % traps.length], traps[(L * 3 + 2) % traps.length]].filter((k, i, a) => a.indexOf(k) === i);
+  const sec = Object.keys(R_UNLOCK).filter((k) => k !== 'straight');
+  const share = lerp(0.3, 0.6, q), nt = Math.round((sec.length * share) / (1 - share));
+  const pool = [...sec, ...Array.from({ length: nt }, (_, i) => traps[i % traps.length])];
+  genTrack(b, { r, d: 1, e, w: Math.round(lerp(11, 8, q)), n: Math.round(lerp(11, 17, q)), pool, fresh, cpEvery: q < 0.45 ? 2 : 3, combo: lerp(0.3, 0.6, q) });
 }
 
 // מפות מירוץ החברים: 1–10 קצרות, 11–20 בינוניות, 21–30 ארוכות
@@ -1036,7 +1443,7 @@ function make(mode, level, ctx) {
     genArena(b, L);
   } else {
     L = clamp(L, 1, RACE_LEVELS);
-    b = new Builder(ctx, L > 30 ? themeFor(TH[(L + 4) % TH.length], L + 1) : themeFor(TH[(L - 1) % TH.length], L));
+    b = new Builder(ctx, L > 60 ? themeFor(TH_X[(L * 7 + 3) % TH_X.length], L + 3) : L > 30 ? themeFor(TH[(L + 4) % TH.length], L + 1) : themeFor(TH[(L - 1) % TH.length], L));
     if (L === HAND_RACE) raceCourse(b); else genRace(b, L);
   }
   return { b, L };

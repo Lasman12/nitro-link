@@ -5,15 +5,15 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { CarPhysics, CarVisual, carShape, addForce, P as CP, DEFAULT_SKIN, SKIN_OPTS, G_CAR, G_REMOTE } from './car.js?v=1794772911';
-import { buildLevel, CHAIN_LEN, RACE_LEVELS, CHAIN_LEVELS, VS_MAPS, BATTLE_MAPS, VS_CATS, MINI_CATS, vsSplit, miniSplit, mapInfo, trackShape } from './level.js?v=1794772911';
-import { WRAPS, GRADS, FEATHERS, TRAILS, HORNS, ROAD, SHOP, SOURCE, itemName, itemSwatch } from './items.js?v=1794772911';
-import { Account, rankOf, AuthError } from './account.js?v=1794772911';
-import { Sky, Particles, ChainVisual, tex } from './fx.js?v=1794772911';
-import { Net } from './net.js?v=1794772911';
-import { Input } from './input.js?v=1794772911';
-import { Sfx } from './audio.js?v=1794772911';
-import { Bot, BOT_NAMES, botSkin } from './bot.js?v=1794772911';
+import { CarPhysics, CarVisual, carShape, addForce, P as CP, DEFAULT_SKIN, SKIN_OPTS, G_CAR, G_REMOTE } from './car.js?v=1795464850';
+import { T_UNLOCK, TRAP_NAMES, buildLevel, CHAIN_LEN, RACE_LEVELS, CHAIN_LEVELS, VS_MAPS, BATTLE_MAPS, VS_CATS, MINI_CATS, vsSplit, miniSplit, mapInfo, trackShape } from './level.js?v=1795464850';
+import { WRAPS, GRADS, FEATHERS, TRAILS, HORNS, ROAD, SHOP, SOURCE, itemName, itemSwatch } from './items.js?v=1795464850';
+import { Account, rankOf, AuthError } from './account.js?v=1795464850';
+import { Sky, Particles, ChainVisual, tex } from './fx.js?v=1795464850';
+import { Net } from './net.js?v=1795464850';
+import { Input } from './input.js?v=1795464850';
+import { Sfx } from './audio.js?v=1795464850';
+import { Bot, BOT_NAMES, botSkin } from './bot.js?v=1795464850';
 
 const $ = (s) => document.querySelector(s);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -411,6 +411,13 @@ class Game {
     this.gone = v;
     this.vis.group.visible = !v;
     if (v) this.world.removeBody(this.car.body); else this.world.addBody(this.car.body);
+  }
+
+  // נפגעתי מלייזר או ממכבש: פיצוץ וחזרה לנקודת הביקורת
+  zap() {
+    this.boom(this.phys);
+    showMsg('⚡ נפגעת!', 1200);
+    if (this.mode === 'chain') this.teamRespawn(true); else this.respawn();
   }
 
   fall() {
@@ -862,6 +869,12 @@ class Game {
         sfx.pad();
       }
     }
+    // מלכודות מיוחדות (לייזרים, מכבשים, פגושים, רוח)
+    if (!this.gone && !this.fin && !this.battle && tRace > 0) {
+      const hz = level.hazards(body, tRace, dt);
+      if (hz === 1) this.zap();
+      else if (hz === 2) { sfx.hit(); this.shake = Math.max(this.shake, 0.35); }
+    }
     // נקודות ביקורת, סיום ונפילה
     for (let i = Math.min(level.cps.length - 1, this.cp + 2); i > this.cp; i--) {
       if (level.inZone(level.cps[i], p)) { this.cp = i; sfx.checkpoint(); showMsg('נקודת ביקורת!'); break; }
@@ -1117,6 +1130,42 @@ function preview(mode, i) {
   const dot = (pos, col) => { const [cx, cy] = map(pos.x, pos.z); g.fillStyle = col; g.strokeStyle = '#000'; g.lineWidth = 1.5; g.beginPath(); g.arc(cx, cy, 4.5, 0, 7); g.fill(); g.stroke(); };
   if (sh.finish) { dot(sh.start, '#2bff7a'); dot(sh.finish, '#ffffff'); }
   return (previews[key] = c.toDataURL());
+}
+
+// 200 תמונות לא נוצרות בבת אחת: כל תמונה נוצרת רק כשהיא מתקרבת לאזור הנראה, כמה בכל פריים
+const BLANK = 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==';
+const TIERS = [[1, 'מתחילים'], [21, 'מתקדמים'], [41, 'מומחים'], [61, 'מלכודות'], [101, 'אכזרי'], [141, 'סיוט'], [181, 'בלתי אפשרי?']];
+function pvImg(mode, i) {
+  const src = previews[mode + i];
+  return src ? `<img src="${src}" alt="">` : `<img src="${BLANK}" data-pv="${mode}:${i}" alt="">`;
+}
+let pvObs = null, pvQueue = [], pvBusy = false;
+function lazyPreviews() {
+  if (pvObs) pvObs.disconnect();
+  pvQueue = [];
+  const imgs = document.querySelectorAll('#levels img[data-pv]');
+  if (!imgs.length) return;
+  pvObs = new IntersectionObserver((ents) => {
+    for (const en of ents) if (en.isIntersecting) { pvQueue.push(en.target); pvObs.unobserve(en.target); }
+    pumpPreviews();
+  }, { root: $('#levels'), rootMargin: '400px 0px' });
+  imgs.forEach((im) => pvObs.observe(im));
+}
+function pumpPreviews() {
+  if (pvBusy) return;
+  pvBusy = true;
+  const step = () => {
+    const t0 = performance.now();
+    while (pvQueue.length && performance.now() - t0 < 10) {
+      const im = pvQueue.shift();
+      if (!im.isConnected || !im.dataset.pv) continue;
+      const [m, i] = im.dataset.pv.split(':');
+      im.src = preview(m, Number(i));
+      im.removeAttribute('data-pv');
+    }
+    if (pvQueue.length) requestAnimationFrame(step); else pvBusy = false;
+  };
+  requestAnimationFrame(step);
 }
 
 function toast(text, ms = 2600) {
@@ -1402,14 +1451,17 @@ function renderLobby() {
     for (let i = 1; i <= count; i++) {
       const inf = mapInfo(mode, base + i);
       if (mode === 'vs' && cat === 0 && i % 10 === 1) html += `<h4>מסלולים ${['קצרים', 'בינוניים', 'ארוכים'][(i - 1) / 10]}</h4>`;
-      html += `<button class="map${base + i === sel ? ' on' : ''}" data-l="${base + i}" ${net.isHost ? '' : 'disabled'}><img src="${preview(mode, base + i)}" alt=""><b>${esc(inf.name)}</b></button>`;
+      html += `<button class="map${base + i === sel ? ' on' : ''}" data-l="${base + i}" ${net.isHost ? '' : 'disabled'}>${pvImg(mode, base + i)}<b>${esc(inf.name)}</b></button>`;
     }
   } else for (let i = 1; i <= maxLevel(mode); i++) {
     const lock = i > open;
-    html += `<button class="map lvc${i === sel ? ' on' : ''}${lock ? ' lock' : ''}${best[i] ? ' done' : ''}" data-l="${i}" ${!net.isHost || lock ? 'disabled' : ''}><img src="${preview(mode, i)}" alt="" loading="lazy"><b>${lock ? '🔒 ' : ''}שלב ${i}${best[i] ? ' · ' + fmt(best[i]) : ''}</b></button>`;
+    if (mode === 'race') { const tier = TIERS.findIndex(([s]) => s === i); if (tier >= 0) html += `<h4>${TIERS[tier][1]} · שלבים ${i}–${(TIERS[tier + 1]?.[0] ?? RACE_LEVELS + 1) - 1}</h4>`; }
+    const trap = mode === 'race' ? Object.keys(T_UNLOCK).find((k) => T_UNLOCK[k] === i) : null;
+    html += `<button class="map lvc${i === sel ? ' on' : ''}${lock ? ' lock' : ''}${best[i] ? ' done' : ''}" data-l="${i}" ${!net.isHost || lock ? 'disabled' : ''}>${pvImg(mode, i)}${trap ? `<em class="newTrap">חדש: ${TRAP_NAMES[trap]}</em>` : ''}<b>${lock ? '🔒 ' : ''}שלב ${i}${best[i] ? ' · ' + fmt(best[i]) : ''}</b></button>`;
   }
   $('#levels').className = 'maps';
   $('#levels').innerHTML = html;
+  lazyPreviews();
   $('#levels').querySelectorAll('.tab').forEach((b) => (b.onclick = () => { lobbyLevel[lobbyMode] = Number(b.dataset.cat) * 100 + 1; net.syncLobby(); }));
   $('#levels').querySelectorAll('.lv, .map').forEach((b) => (b.onclick = () => { lobbyLevel[lobbyMode] = Number(b.dataset.l); net.syncLobby(); }));
   if (renderLobby.last !== mode + sel) { renderLobby.last = mode + sel; $('#levels').querySelector('.on')?.scrollIntoView({ block: 'nearest' }); }

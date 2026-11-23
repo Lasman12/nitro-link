@@ -2,7 +2,7 @@
 // לבוט יש אותו ממשק כמו Remote (שחקן מרוחק), כך ששאר המשחק לא מבדיל ביניהם.
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
-import { CarPhysics, CarVisual, P as CP, G_WORLD, G_CAR, G_KIN, G_REMOTE } from './car.js?v=1794772911';
+import { CarPhysics, CarVisual, P as CP, G_WORLD, G_CAR, G_KIN, G_REMOTE } from './car.js?v=1795464850';
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const lerp = (a, b, t) => a + (b - a) * t;
@@ -127,6 +127,16 @@ export class Bot {
       if (this.car.supported && d < 1.8 + speed * 0.13 && !at(0).gap) wantJump = true;
       break;
     }
+    // מלכודות לפניי: קרן נמוכה – קופצים; לייזר דולק / מכבש למטה / אריח כבוי – מחכים
+    let hold = false;
+    if (this.lvl >= 2 && game.level.danger) {
+      for (const dd of [2.5, 6, 10, 15]) {
+        const px2 = p.x + ((tx - p.x) / dist) * dd, pz2 = p.z + ((tz - p.z) / dist) * dd;
+        const hz = game.level.danger(px2, pz2, p.y, game.tRace + dd / Math.max(speed, 6));
+        if (hz === 'jump' && this.car.supported && dd <= 2.5 + speed * 0.16) wantJump = true;
+        if (hz === 'stop' && this.lvl >= 3) { hold = true; break; }
+      }
+    }
     // היגוי
     _f.set(0, 0, 1).applyQuaternion(_q.set(b.quaternion.x, b.quaternion.y, b.quaternion.z, b.quaternion.w));
     const diff = wrap(Math.atan2(tx - p.x, tz - p.z) - Math.atan2(_f.x, _f.z));
@@ -149,6 +159,7 @@ export class Bot {
     if (tall) want = Math.min(want, 13);
     if (gapNear) want = 60;
     if (game.mode === 'chain') want = Math.min(want, this.chainPace(game));
+    if (hold) want = 0;
     inp.throttle = speed < want ? 1 : speed > want + 4 ? -1 : 0;
     if (Math.abs(diff) > 2.2 && speed < 4) inp.throttle = -1; // פונים לכיוון ההפוך – רוורס
     this.unstick();
@@ -264,6 +275,7 @@ export class Bot {
           b.velocity.x += pd.f.x * kick; b.velocity.z += pd.f.z * kick;
           break;
         }
+        if (tRace > 0 && !this.fin && lv.hazards(b, tRace, dt) === 1) { game.burst(this.pos, 30, 12, [0xff2d1a, 0xffd21a], 0.6); game.botFall(this); }
       }
       // תקוע במקום – חוזרים לנקודת הביקורת
       if (tRace > 1 && !this.fin && Math.hypot(b.velocity.x, b.velocity.z) < 1.2 && this.inp.throttle !== 0) this.stuckT += dt; else this.stuckT = 0;
